@@ -3,6 +3,18 @@ node_modules/
 */node_modules/
 */vendor/
 
+# Binary files
+backend/*/auth-service
+backend/*/user-service
+backend/*/department-service
+backend/*/schedule-service
+backend/*/notification-service
+backend/*/setting-service
+backend/*/priority-service
+backend/*/package-service
+backend/*/payment-service
+backend/*/employee-leave-service
+
 # Build outputs
 .next/
 dist/
