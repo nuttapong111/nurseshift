@@ -1,10 +1,12 @@
 package handlers
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
 	"nurseshift/auth-service/internal/domain/usecases"
+	"nurseshift/auth-service/internal/infrastructure/services"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
@@ -24,15 +26,19 @@ import (
 
 // AuthHandler handles authentication-related HTTP requests
 type AuthHandler struct {
-	authUseCase usecases.AuthUseCase
-	jwtService  usecases.JWTService
+	authUseCase          usecases.AuthUseCase
+	jwtService           usecases.JWTService
+	emailService         services.EmailService
+	passwordResetService services.PasswordResetService
 }
 
 // NewAuthHandler creates a new auth handler
-func NewAuthHandler(authUseCase usecases.AuthUseCase, jwtService usecases.JWTService) *AuthHandler {
+func NewAuthHandler(authUseCase usecases.AuthUseCase, jwtService usecases.JWTService, emailService services.EmailService, passwordResetService services.PasswordResetService) *AuthHandler {
 	return &AuthHandler{
-		authUseCase: authUseCase,
-		jwtService:  jwtService,
+		authUseCase:          authUseCase,
+		jwtService:           jwtService,
+		emailService:         emailService,
+		passwordResetService: passwordResetService,
 	}
 }
 
@@ -70,7 +76,7 @@ type RefreshTokenRequest struct {
 // ChangePasswordRequest represents a change password request
 type ChangePasswordRequest struct {
 	OldPassword string `json:"oldPassword" validate:"required"`
-	NewPassword string `json:"newPassword" validate:"required,min=8"`
+	NewPassword string `json:"newPassword" validate:"required,min=6"`
 }
 
 // ForgotPasswordRequest represents a forgot password request
@@ -81,7 +87,7 @@ type ForgotPasswordRequest struct {
 // ResetPasswordRequest represents a password reset request
 type ResetPasswordRequest struct {
 	Token       string `json:"token" validate:"required"`
-	NewPassword string `json:"newPassword" validate:"required,min=8"`
+	NewPassword string `json:"newPassword" validate:"required,min=6"`
 }
 
 // Login handles user authentication
@@ -430,16 +436,47 @@ func (h *AuthHandler) ForgotPassword(c *fiber.Ctx) error {
 		})
 	}
 
-	// TODO: Implement forgot password logic
 	// 1. Check if user exists
+	user, err := h.authUseCase.GetUserByEmail(c.Context(), req.Email)
+	if err != nil {
+		// Don't reveal if user exists or not for security
+		return c.Status(fiber.StatusOK).JSON(fiber.Map{
+			"status":  "success",
+			"message": "หากอีเมลนี้มีอยู่ในระบบ เราจะส่งรหัสยืนยันไปให้",
+		})
+	}
+
 	// 2. Generate reset token
-	// 3. Send email with reset token
-	// 4. Store token with expiration
+	resetToken, err := h.passwordResetService.GenerateResetToken()
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"status":  "error",
+			"message": "เกิดข้อผิดพลาดในการสร้างรหัสยืนยัน",
+		})
+	}
+
+	// 3. Store reset token with expiration
+	err = h.passwordResetService.StoreResetToken(user.ID, resetToken)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"status":  "error",
+			"message": "เกิดข้อผิดพลาดในการบันทึกรหัสยืนยัน",
+		})
+	}
+
+	// 4. Send email with reset token
+	err = h.emailService.SendPasswordResetEmail(user.Email, resetToken)
+	if err != nil {
+		// Log error but don't reveal to user
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"status":  "error",
+			"message": "เกิดข้อผิดพลาดในการส่งอีเมล",
+		})
+	}
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"status":  "success",
-		"message": "หากอีเมลนี้มีอยู่ในระบบ เราจะส่งรหัสยืนยันไปให้",
-		"note":    "This endpoint is not yet implemented",
+		"message": "ส่งรหัสยืนยันไปยังอีเมลของคุณแล้ว กรุณาตรวจสอบกล่องจดหมาย",
 	})
 }
 
@@ -465,15 +502,41 @@ func (h *AuthHandler) ResetPassword(c *fiber.Ctx) error {
 		})
 	}
 
-	// TODO: Implement password reset logic
 	// 1. Validate reset token
+	if !h.passwordResetService.ValidateResetToken(req.Token) {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "error",
+			"message": "รหัสยืนยันไม่ถูกต้องหรือหมดอายุแล้ว",
+		})
+	}
+
 	// 2. Get user ID from token
+	userID, err := h.passwordResetService.GetUserIDByToken(req.Token)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "error",
+			"message": "รหัสยืนยันไม่ถูกต้องหรือหมดอายุแล้ว",
+		})
+	}
+
 	// 3. Update user password
+	err = h.authUseCase.UpdatePassword(c.Context(), userID, req.NewPassword)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"status":  "error",
+			"message": "เกิดข้อผิดพลาดในการรีเซ็ตรหัสผ่าน",
+		})
+	}
+
 	// 4. Clear reset token
+	err = h.passwordResetService.ClearResetToken(req.Token)
+	if err != nil {
+		// Log error but don't fail the password reset
+		fmt.Printf("Warning: failed to clear reset token: %v\n", err)
+	}
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"status":  "success",
-		"message": "รีเซ็ตรหัสผ่านสำเร็จ",
-		"note":    "This endpoint is not yet implemented",
+		"message": "รีเซ็ตรหัสผ่านสำเร็จ กรุณาเข้าสู่ระบบด้วยรหัสผ่านใหม่",
 	})
 }

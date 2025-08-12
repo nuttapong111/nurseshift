@@ -27,10 +27,10 @@ type PasswordService interface {
 
 // JWTClaims represents JWT token claims
 type JWTClaims struct {
-	UserID   uuid.UUID
-	Role     entities.UserRole
-	Type     string
-	IssuedAt time.Time
+	UserID    uuid.UUID
+	Role      entities.UserRole
+	Type      string
+	IssuedAt  time.Time
 	ExpiresAt time.Time
 }
 
@@ -43,6 +43,8 @@ type AuthUseCase interface {
 	LogoutAllSessions(ctx context.Context, userID uuid.UUID) error
 	ValidateSession(ctx context.Context, tokenHash string) (*User, error)
 	ChangePassword(ctx context.Context, userID uuid.UUID, oldPassword, newPassword string) error
+	UpdatePassword(ctx context.Context, userID uuid.UUID, newPassword string) error
+	GetUserByEmail(ctx context.Context, email string) (*User, error)
 }
 
 // AuthUseCaseImpl implements AuthUseCase
@@ -79,7 +81,7 @@ type LoginRequest struct {
 // RegisterRequest represents a registration request
 type RegisterRequest struct {
 	Email     string  `json:"email" validate:"required,email"`
-	Password  string  `json:"password" validate:"required,min=8"`
+	Password  string  `json:"password" validate:"required,min=6"`
 	FirstName string  `json:"firstName" validate:"required"`
 	LastName  string  `json:"lastName" validate:"required"`
 	Phone     *string `json:"phone,omitempty"`
@@ -88,10 +90,10 @@ type RegisterRequest struct {
 
 // LoginResponse represents a successful login response
 type LoginResponse struct {
-	AccessToken  string `json:"accessToken"`
-	RefreshToken string `json:"refreshToken"`
+	AccessToken  string    `json:"accessToken"`
+	RefreshToken string    `json:"refreshToken"`
 	ExpiresAt    time.Time `json:"expiresAt"`
-	User         *User    `json:"user"`
+	User         *User     `json:"user"`
 }
 
 // User represents a user response (without sensitive data)
@@ -364,6 +366,49 @@ func (uc *AuthUseCaseImpl) ChangePassword(ctx context.Context, userID uuid.UUID,
 	}
 
 	return nil
+}
+
+// UpdatePassword changes a user's password
+func (uc *AuthUseCaseImpl) UpdatePassword(ctx context.Context, userID uuid.UUID, newPassword string) error {
+	// Get user
+	user, err := uc.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("user not found")
+	}
+
+	// Hash new password
+	hashedPassword, err := uc.passwordService.HashPassword(newPassword)
+	if err != nil {
+		return fmt.Errorf("failed to hash new password")
+	}
+
+	// Update password in database
+	user.PasswordHash = hashedPassword
+	user.UpdatedAt = time.Now()
+
+	err = uc.userRepo.Update(ctx, user)
+	if err != nil {
+		return fmt.Errorf("failed to update password")
+	}
+
+	// Revoke all existing sessions to force re-login
+	err = uc.userRepo.RevokeAllUserSessions(ctx, userID)
+	if err != nil {
+		// Log error but don't fail the password change
+		fmt.Printf("Warning: failed to revoke all sessions for user %s: %v\n", userID, err)
+	}
+
+	return nil
+}
+
+// GetUserByEmail retrieves a user by email
+func (uc *AuthUseCaseImpl) GetUserByEmail(ctx context.Context, email string) (*User, error) {
+	user, err := uc.userRepo.GetByEmail(ctx, email)
+	if err != nil {
+		return nil, err
+	}
+	
+	return uc.mapUserToResponse(user), nil
 }
 
 // mapUserToResponse converts a domain user entity to a response user

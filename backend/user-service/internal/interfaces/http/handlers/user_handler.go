@@ -1,14 +1,12 @@
 package handlers
 
 import (
-	"strconv"
 	"time"
 
-	"nurseshift/user-service/internal/domain/entities"
+	"nurseshift/user-service/internal/domain/repositories"
 	"nurseshift/user-service/internal/domain/usecases"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/google/uuid"
 )
 
 // UserHandler handles user-related HTTP requests
@@ -23,11 +21,13 @@ func NewUserHandler(userUseCase usecases.UserUseCase) *UserHandler {
 	}
 }
 
-// GetProfile returns current user profile
+// GetProfile returns the authenticated user's profile
 func (h *UserHandler) GetProfile(c *fiber.Ctx) error {
-	userID := c.Locals("userID").(uuid.UUID)
+	// Get user ID from context (set by auth middleware)
+	userIDStr := c.Locals("userID").(string)
 
-	profile, err := h.userUseCase.GetProfile(c.Context(), userID)
+	// Get user profile
+	user, err := h.userUseCase.GetProfile(c.Context(), userIDStr)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"status":  "error",
@@ -36,78 +36,70 @@ func (h *UserHandler) GetProfile(c *fiber.Ctx) error {
 		})
 	}
 
-	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+	return c.JSON(fiber.Map{
 		"status":  "success",
 		"message": "ดึงข้อมูลโปรไฟล์สำเร็จ",
-		"data":    profile,
+		"data":    user,
 	})
 }
 
-// UpdateProfile updates user profile
+// UpdateProfile updates the authenticated user's profile
 func (h *UserHandler) UpdateProfile(c *fiber.Ctx) error {
-	userID := c.Locals("userID").(uuid.UUID)
+	// Get user ID from context (set by auth middleware)
+	userIDStr := c.Locals("userID").(string)
 
+	// Parse request body
 	var req usecases.UpdateProfileRequest
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"status":  "error",
-			"message": "ข้อมูลที่ส่งมาไม่ถูกต้อง",
+			"message": "ไม่สามารถอ่านข้อมูลได้",
 			"error":   err.Error(),
 		})
 	}
 
-	user, err := h.userUseCase.UpdateProfile(c.Context(), userID, &req)
+	// Update profile
+	user, err := h.userUseCase.UpdateProfile(c.Context(), userIDStr, &req)
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"status":  "error",
 			"message": "ไม่สามารถอัปเดตโปรไฟล์ได้",
 			"error":   err.Error(),
 		})
 	}
 
-	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+	return c.JSON(fiber.Map{
 		"status":  "success",
 		"message": "อัปเดตโปรไฟล์สำเร็จ",
 		"data":    user,
 	})
 }
 
-// GetUsers returns paginated list of users (admin/manager only)
+// GetUsers returns a list of users (admin only)
 func (h *UserHandler) GetUsers(c *fiber.Ctx) error {
-	organizationID := c.Locals("organizationID").(uuid.UUID)
+	// Get user ID from context (set by auth middleware)
+	userIDStr := c.Locals("userID").(string)
 
 	// Parse query parameters
-	page, _ := strconv.Atoi(c.Query("page", "1"))
-	limit, _ := strconv.Atoi(c.Query("limit", "10"))
-
-	var role *entities.UserRole
-	if roleStr := c.Query("role"); roleStr != "" {
-		r := entities.UserRole(roleStr)
-		role = &r
+	var req repositories.GetUsersRequest
+	if err := c.QueryParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "error",
+			"message": "ไม่สามารถอ่านพารามิเตอร์ได้",
+			"error":   err.Error(),
+		})
 	}
 
-	var status *entities.UserStatus
-	if statusStr := c.Query("status"); statusStr != "" {
-		s := entities.UserStatus(statusStr)
-		status = &s
+	// Set default values
+	if req.Page <= 0 {
+		req.Page = 1
+	}
+	if req.Limit <= 0 {
+		req.Limit = 10
 	}
 
-	var departmentID *uuid.UUID
-	if deptStr := c.Query("departmentId"); deptStr != "" {
-		if deptUUID, err := uuid.Parse(deptStr); err == nil {
-			departmentID = &deptUUID
-		}
-	}
-
-	req := &usecases.GetUsersRequest{
-		Role:         role,
-		Status:       status,
-		DepartmentID: departmentID,
-		Page:         page,
-		Limit:        limit,
-	}
-
-	response, err := h.userUseCase.GetUsers(c.Context(), organizationID, req)
+	// Get users
+	response, err := h.userUseCase.GetUsers(c.Context(), userIDStr, req)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"status":  "error",
@@ -116,71 +108,69 @@ func (h *UserHandler) GetUsers(c *fiber.Ctx) error {
 		})
 	}
 
-	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+	return c.JSON(fiber.Map{
 		"status":  "success",
 		"message": "ดึงข้อมูลผู้ใช้สำเร็จ",
 		"data":    response,
 	})
 }
 
-// GetUser returns specific user details
+// GetUser returns a specific user by ID
 func (h *UserHandler) GetUser(c *fiber.Ctx) error {
-	requesterID := c.Locals("userID").(uuid.UUID)
+	// Get user ID from context (set by auth middleware)
+	_ = c.Locals("userID").(string) // Check if user is authenticated
 
-	userIDStr := c.Params("id")
-	userID, err := uuid.Parse(userIDStr)
-	if err != nil {
+	// Get user ID from URL parameter
+	userID := c.Params("id")
+	if userID == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"status":  "error",
-			"message": "รหัสผู้ใช้ไม่ถูกต้อง",
+			"message": "กรุณาระบุ ID ผู้ใช้",
 		})
 	}
 
-	profile, err := h.userUseCase.GetUser(c.Context(), userID, requesterID)
+	// Get user profile
+	user, err := h.userUseCase.GetProfile(c.Context(), userID)
 	if err != nil {
-		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"status":  "error",
-			"message": "ไม่มีสิทธิ์เข้าถึงข้อมูลนี้",
+			"message": "ไม่สามารถดึงข้อมูลผู้ใช้ได้",
 			"error":   err.Error(),
 		})
 	}
 
-	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+	return c.JSON(fiber.Map{
 		"status":  "success",
 		"message": "ดึงข้อมูลผู้ใช้สำเร็จ",
-		"data":    profile,
+		"data":    user,
 	})
 }
 
-// SearchUsers searches users by query
+// SearchUsers searches for users based on query (admin only)
 func (h *UserHandler) SearchUsers(c *fiber.Ctx) error {
-	organizationID := c.Locals("organizationID").(uuid.UUID)
+	// Get user ID from context (set by auth middleware)
+	userIDStr := c.Locals("userID").(string)
 
-	query := c.Query("q", "")
-	page, _ := strconv.Atoi(c.Query("page", "1"))
-	limit, _ := strconv.Atoi(c.Query("limit", "10"))
-
-	var role *entities.UserRole
-	if roleStr := c.Query("role"); roleStr != "" {
-		r := entities.UserRole(roleStr)
-		role = &r
+	// Parse query parameters
+	var req repositories.SearchUsersRequest
+	if err := c.QueryParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "error",
+			"message": "ไม่สามารถอ่านพารามิเตอร์ได้",
+			"error":   err.Error(),
+		})
 	}
 
-	var status *entities.UserStatus
-	if statusStr := c.Query("status"); statusStr != "" {
-		s := entities.UserStatus(statusStr)
-		status = &s
+	// Set default values
+	if req.Page <= 0 {
+		req.Page = 1
+	}
+	if req.Limit <= 0 {
+		req.Limit = 10
 	}
 
-	req := &usecases.SearchUsersRequest{
-		Query:  query,
-		Role:   role,
-		Status: status,
-		Page:   page,
-		Limit:  limit,
-	}
-
-	response, err := h.userUseCase.SearchUsers(c.Context(), organizationID, req)
+	// Search users
+	response, err := h.userUseCase.SearchUsers(c.Context(), userIDStr, req)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"status":  "error",
@@ -189,63 +179,180 @@ func (h *UserHandler) SearchUsers(c *fiber.Ctx) error {
 		})
 	}
 
-	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+	return c.JSON(fiber.Map{
 		"status":  "success",
 		"message": "ค้นหาผู้ใช้สำเร็จ",
 		"data":    response,
 	})
 }
 
-// GetUserStats returns user statistics
+// GetUserStats returns user statistics (admin only)
 func (h *UserHandler) GetUserStats(c *fiber.Ctx) error {
-	organizationID := c.Locals("organizationID").(uuid.UUID)
+	// Get user ID from context (set by auth middleware)
+	userIDStr := c.Locals("userID").(string)
 
-	stats, err := h.userUseCase.GetUserStats(c.Context(), organizationID)
+	// Get user stats
+	stats, err := h.userUseCase.GetUserStats(c.Context(), userIDStr)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"status":  "error",
-			"message": "ไม่สามารถดึงสstatisticsข้อมูลได้",
+			"message": "ไม่สามารถดึงสถิติผู้ใช้ได้",
 			"error":   err.Error(),
 		})
 	}
 
-	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+	return c.JSON(fiber.Map{
 		"status":  "success",
 		"message": "ดึงสถิติผู้ใช้สำเร็จ",
 		"data":    stats,
 	})
 }
 
-// UploadAvatar handles avatar upload
+// UploadAvatar uploads a user's avatar
 func (h *UserHandler) UploadAvatar(c *fiber.Ctx) error {
-	userID := c.Locals("userID").(uuid.UUID)
+	// Get user ID from context (set by auth middleware)
+	userIDStr := c.Locals("userID").(string)
 
-	// For now, we'll just accept a URL
-	// In production, this would handle file upload to cloud storage
+	// Parse request body
 	var req struct {
-		AvatarURL string `json:"avatarUrl" validate:"required,url"`
+		AvatarURL string `json:"avatarUrl"`
 	}
 
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"status":  "error",
-			"message": "ข้อมูลที่ส่งมาไม่ถูกต้อง",
+			"message": "ไม่สามารถอ่านข้อมูลได้",
 			"error":   err.Error(),
 		})
 	}
 
-	err := h.userUseCase.UploadAvatar(c.Context(), userID, req.AvatarURL)
+	if req.AvatarURL == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "error",
+			"message": "กรุณาระบุ URL รูปภาพ",
+		})
+	}
+
+	// Upload avatar
+	err := h.userUseCase.UploadAvatar(c.Context(), userIDStr, req.AvatarURL)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"status":  "error",
-			"message": "ไม่สามารถอัปเดตรูปโปรไฟล์ได้",
+			"message": "ไม่สามารถอัปโหลดรูปภาพได้",
 			"error":   err.Error(),
 		})
 	}
 
-	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+	return c.JSON(fiber.Map{
 		"status":  "success",
 		"message": "อัปเดตรูปโปรไฟล์สำเร็จ",
+	})
+}
+
+// SendVerificationEmail sends a verification email to the user
+func (h *UserHandler) SendVerificationEmail(c *fiber.Ctx) error {
+	// Parse request body
+	var req struct {
+		Email string `json:"email"`
+	}
+
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "error",
+			"message": "ไม่สามารถอ่านข้อมูลได้",
+			"error":   err.Error(),
+		})
+	}
+
+	if req.Email == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "error",
+			"message": "กรุณาระบุอีเมล",
+		})
+	}
+
+	// Send verification email
+	err := h.userUseCase.SendVerificationEmail(c.Context(), req.Email)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"status":  "error",
+			"message": "ไม่สามารถส่งอีเมลยืนยันได้",
+			"error":   err.Error(),
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"status":  "success",
+		"message": "ส่งอีเมลยืนยันแล้ว กรุณาตรวจสอบอีเมลของคุณ",
+	})
+}
+
+// VerifyEmail verifies the user's email using a token
+func (h *UserHandler) VerifyEmail(c *fiber.Ctx) error {
+	// Parse request body
+	var req struct {
+		Token string `json:"token"`
+	}
+
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "error",
+			"message": "ไม่สามารถอ่านข้อมูลได้",
+			"error":   err.Error(),
+		})
+	}
+
+	if req.Token == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "error",
+			"message": "กรุณาระบุ token",
+		})
+	}
+
+	// Verify email
+	err := h.userUseCase.VerifyEmail(c.Context(), req.Token)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "error",
+			"message": "ไม่สามารถยืนยันอีเมลได้",
+			"error":   err.Error(),
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"status":  "success",
+		"message": "ยืนยันอีเมลสำเร็จ",
+	})
+}
+
+// CheckEmailVerification checks if a user's email is verified
+func (h *UserHandler) CheckEmailVerification(c *fiber.Ctx) error {
+	// Get email from URL parameter
+	email := c.Params("email")
+	if email == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "error",
+			"message": "กรุณาระบุอีเมล",
+		})
+	}
+
+	// Check email verification status
+	verified, err := h.userUseCase.IsEmailVerified(c.Context(), email)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"status":  "error",
+			"message": "ไม่สามารถตรวจสอบสถานะการยืนยันอีเมลได้",
+			"error":   err.Error(),
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"status":  "success",
+		"message": "ดึงสถานะการยืนยันอีเมลสำเร็จ",
+		"data": fiber.Map{
+			"email":    email,
+			"verified": verified,
+		},
 	})
 }
 
@@ -257,5 +364,3 @@ func (h *UserHandler) Health(c *fiber.Ctx) error {
 		"timestamp": time.Now(),
 	})
 }
-
-

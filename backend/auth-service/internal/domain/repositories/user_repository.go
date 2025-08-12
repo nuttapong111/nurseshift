@@ -16,6 +16,7 @@ type UserRepository interface {
 	Create(ctx context.Context, user *entities.User) error
 	Update(ctx context.Context, user *entities.User) error
 	UpdateLastLogin(ctx context.Context, userID uuid.UUID) error
+	UpdatePassword(ctx context.Context, userID uuid.UUID, hashedPassword string) error
 
 	// Organization operations
 	GetOrganizationByID(ctx context.Context, id uuid.UUID) (*entities.Organization, error)

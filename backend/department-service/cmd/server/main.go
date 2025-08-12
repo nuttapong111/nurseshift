@@ -5,10 +5,12 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"nurseshift/department-service/internal/infrastructure/config"
+	"nurseshift/department-service/internal/infrastructure/database"
 	"nurseshift/department-service/internal/interfaces/http/handlers"
 	"nurseshift/department-service/internal/interfaces/http/middleware"
 
@@ -28,6 +30,16 @@ func main() {
 
 	fmt.Printf("Starting Department Service on port %s...\n", cfg.Server.Port)
 
+	// Initialize database connection
+	dbConn, err := database.NewConnection(cfg)
+	if err != nil {
+		log.Fatalf("Failed to connect to database: %v", err)
+	}
+	defer dbConn.Close()
+
+	// Initialize repositories
+	deptRepo := database.NewPostgresDepartmentRepository(dbConn.DB, "nurse_shift")
+
 	// Create Fiber app
 	app := fiber.New(fiber.Config{
 		AppName:      "NurseShift Department Service",
@@ -40,10 +52,10 @@ func main() {
 	app.Use(recover.New())
 	app.Use(helmet.New())
 	app.Use(cors.New(cors.Config{
-		AllowOrigins:     "http://localhost:3000,http://localhost:3002",
+		AllowOrigins:     strings.Join(cfg.CORS.Origins, ","),
 		AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS",
 		AllowHeaders:     "Origin,Content-Type,Accept,Authorization",
-		AllowCredentials: true,
+		AllowCredentials: cfg.CORS.Credentials,
 	}))
 
 	if cfg.IsDevelopment() {
@@ -51,7 +63,7 @@ func main() {
 	}
 
 	// Initialize handlers
-	deptHandler := handlers.NewDepartmentHandler()
+	deptHandler := handlers.NewDepartmentHandler(deptRepo)
 
 	// Routes
 	api := app.Group("/api/v1")
@@ -66,7 +78,9 @@ func main() {
 		departments.Get("/:id", deptHandler.GetDepartment)
 		departments.Put("/:id", deptHandler.UpdateDepartment)
 		departments.Delete("/:id", deptHandler.DeleteDepartment)
-		departments.Get("/:id/employees", deptHandler.GetDepartmentEmployees)
+		departments.Get("/:id/staff", deptHandler.GetDepartmentStaff)
+		departments.Post("/:id/staff", deptHandler.AddDepartmentStaff)
+		departments.Delete("/:id/staff/:staffId", deptHandler.DeleteDepartmentStaff)
 	}
 
 	// Health check

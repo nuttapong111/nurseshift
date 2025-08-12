@@ -56,7 +56,7 @@ func NewServer(cfg *config.Config, authUseCase usecases.AuthUseCase, jwtService 
 	}
 
 	// Routes
-	routes.SetupAuthRoutes(app, authUseCase, jwtService, jwtSecret)
+	routes.SetupAuthRoutes(app, authUseCase, jwtService, jwtSecret, cfg)
 
 	// Swagger Documentation
 	docs.SwaggerInfo.Host = "localhost:8081"

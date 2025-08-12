@@ -80,5 +80,3 @@ func main() {
 	app.Shutdown()
 	fmt.Println("✅ Setting Service stopped gracefully")
 }
-
-

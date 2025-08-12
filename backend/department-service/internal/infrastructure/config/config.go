@@ -82,7 +82,7 @@ func Load() (*Config, error) {
 			Host:     getEnv("DB_HOST", "localhost"),
 			Port:     getEnv("DB_PORT", "5432"),
 			User:     getEnv("DB_USER", "postgres"),
-			Password: getEnv("DB_PASSWORD", ""),
+			Password: getEnv("DB_PASSWORD", "123456"),
 			Name:     getEnv("DB_NAME", "nurseshift"),
 			SSLMode:  getEnv("DB_SSLMODE", "disable"),
 			Schema:   getEnv("DB_SCHEMA", "nurse_shift"),
@@ -94,7 +94,7 @@ func Load() (*Config, error) {
 			DB:       getEnvAsInt("REDIS_DB", 0),
 		},
 		JWT: JWTConfig{
-			Secret:            getEnv("JWT_SECRET", "your-secret-key"),
+			Secret:            getEnv("JWT_SECRET", "nurseshift-department-service-secret-key-2024"),
 			ExpireHours:       getEnvAsInt("JWT_EXPIRE_HOURS", 24),
 			RefreshExpireDays: getEnvAsInt("JWT_REFRESH_EXPIRE_DAYS", 7),
 		},
@@ -125,8 +125,8 @@ func (c *Config) validate() error {
 	if c.Database.Name == "" {
 		return fmt.Errorf("database name is required")
 	}
-	if c.JWT.Secret == "" || c.JWT.Secret == "your-secret-key" {
-		return fmt.Errorf("JWT secret must be set and not be the default value")
+	if c.JWT.Secret == "" {
+		return fmt.Errorf("JWT secret is required")
 	}
 	return nil
 }

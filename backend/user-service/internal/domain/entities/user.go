@@ -10,10 +10,8 @@ import (
 type UserRole string
 
 const (
-	RoleAdmin     UserRole = "admin"
-	RoleManager   UserRole = "manager"
-	RoleNurse     UserRole = "nurse"
-	RoleAssistant UserRole = "assistant"
+	RoleAdmin UserRole = "admin"
+	RoleUser  UserRole = "user"
 )
 
 // UserStatus represents user status
@@ -26,64 +24,59 @@ const (
 	StatusSuspended UserStatus = "suspended"
 )
 
-// User represents the user entity
-type User struct {
-	ID             uuid.UUID  `json:"id" db:"id"`
-	OrganizationID uuid.UUID  `json:"organization_id" db:"organization_id"`
-	EmployeeID     string     `json:"employee_id" db:"employee_id"`
-	Email          string     `json:"email" db:"email"`
-	PasswordHash   string     `json:"-" db:"password_hash"`
-	FirstName      string     `json:"first_name" db:"first_name"`
-	LastName       string     `json:"last_name" db:"last_name"`
-	Phone          *string    `json:"phone" db:"phone"`
-	Role           UserRole   `json:"role" db:"role"`
-	Status         UserStatus `json:"status" db:"status"`
-	Position       *string    `json:"position" db:"position"`
-	DateJoined     time.Time  `json:"date_joined" db:"date_joined"`
-	DateOfBirth    *time.Time `json:"date_of_birth" db:"date_of_birth"`
-	AvatarURL      *string    `json:"avatar_url" db:"avatar_url"`
-	LastLoginAt    *time.Time `json:"last_login_at" db:"last_login_at"`
-	CreatedAt      time.Time  `json:"created_at" db:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at" db:"updated_at"`
-}
+// PackageType represents package types
+type PackageType string
 
-// Organization represents the organization entity
-type Organization struct {
-	ID                    uuid.UUID  `json:"id" db:"id"`
-	Name                  string     `json:"name" db:"name"`
-	Description           *string    `json:"description" db:"description"`
-	Email                 *string    `json:"email" db:"email"`
-	Phone                 *string    `json:"phone" db:"phone"`
-	Address               *string    `json:"address" db:"address"`
-	Website               *string    `json:"website" db:"website"`
-	LicenseNumber         *string    `json:"license_number" db:"license_number"`
-	SubscriptionExpiresAt *time.Time `json:"subscription_expires_at" db:"subscription_expires_at"`
-	PackageType           string     `json:"package_type" db:"package_type"`
-	MaxUsers              int        `json:"max_users" db:"max_users"`
-	MaxDepartments        int        `json:"max_departments" db:"max_departments"`
-	CreatedAt             time.Time  `json:"created_at" db:"created_at"`
-	UpdatedAt             time.Time  `json:"updated_at" db:"updated_at"`
+const (
+	PackageStandard   PackageType = "standard"
+	PackageEnterprise PackageType = "enterprise"
+	PackageTrial      PackageType = "trial"
+)
+
+// User represents the user entity matching the database schema
+type User struct {
+	ID                         uuid.UUID   `json:"id" db:"id"`
+	Email                      string      `json:"email" db:"email"`
+	PasswordHash               string      `json:"-" db:"password_hash"`
+	FirstName                  string      `json:"firstName" db:"first_name"`
+	LastName                   string      `json:"lastName" db:"last_name"`
+	Phone                      *string     `json:"phone" db:"phone"`
+	Role                       UserRole    `json:"role" db:"role"`
+	Status                     UserStatus  `json:"status" db:"status"`
+	Position                   *string     `json:"position" db:"position"`
+	DaysRemaining              int         `json:"remainingDays" db:"days_remaining"`
+	SubscriptionExpiresAt      *time.Time  `json:"subscriptionExpiresAt" db:"subscription_expires_at"`
+	PackageType                PackageType `json:"packageType" db:"package_type"`
+	MaxDepartments             int         `json:"maxDepartments" db:"max_departments"`
+	AvatarURL                  *string     `json:"avatarUrl" db:"avatar_url"`
+	Settings                   *string     `json:"settings" db:"settings"`
+	LastLoginAt                *time.Time  `json:"lastLoginAt" db:"last_login_at"`
+	EmailVerified              bool        `json:"emailVerified" db:"email_verified"`
+	EmailVerificationToken     *string     `json:"emailVerificationToken,omitempty" db:"email_verification_token"`
+	EmailVerificationExpiresAt *time.Time  `json:"emailVerificationExpiresAt,omitempty" db:"email_verification_expires_at"`
+	CreatedAt                  time.Time   `json:"createdAt" db:"created_at"`
+	UpdatedAt                  time.Time   `json:"updatedAt" db:"updated_at"`
 }
 
 // Department represents a department entity
 type Department struct {
-	ID             uuid.UUID  `json:"id" db:"id"`
-	OrganizationID uuid.UUID  `json:"organization_id" db:"organization_id"`
-	Name           string     `json:"name" db:"name"`
-	Description    *string    `json:"description" db:"description"`
-	HeadUserID     *uuid.UUID `json:"head_user_id" db:"head_user_id"`
-	MaxNurses      int        `json:"max_nurses" db:"max_nurses"`
-	MaxAssistants  int        `json:"max_assistants" db:"max_assistants"`
-	CreatedAt      time.Time  `json:"created_at" db:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at" db:"updated_at"`
+	ID            uuid.UUID `json:"id" db:"id"`
+	UserID        uuid.UUID `json:"userId" db:"user_id"`
+	Name          string    `json:"name" db:"name"`
+	Description   *string   `json:"description" db:"description"`
+	MaxNurses     int       `json:"maxNurses" db:"max_nurses"`
+	MaxAssistants int       `json:"maxAssistants" db:"max_assistants"`
+	Settings      *string   `json:"settings" db:"settings"`
+	IsActive      bool      `json:"isActive" db:"is_active"`
+	CreatedAt     time.Time `json:"createdAt" db:"created_at"`
+	UpdatedAt     time.Time `json:"updatedAt" db:"updated_at"`
 }
 
 // UserProfile represents extended user profile information
 type UserProfile struct {
-	User         *User         `json:"user"`
-	Organization *Organization `json:"organization"`
-	Department   *Department   `json:"department,omitempty"`
-	Permissions  []string      `json:"permissions"`
+	User        *User       `json:"user"`
+	Department  *Department `json:"department,omitempty"`
+	Permissions []string    `json:"permissions"`
 }
 
 // Methods for User entity
@@ -108,14 +101,9 @@ func (u *User) IsAdmin() bool {
 	return u.Role == RoleAdmin
 }
 
-// IsManager checks if the user is a manager
-func (u *User) IsManager() bool {
-	return u.Role == RoleManager
-}
-
 // CanManage checks if the user can manage other users
 func (u *User) CanManage() bool {
-	return u.Role == RoleAdmin || u.Role == RoleManager
+	return u.Role == RoleAdmin
 }
 
 // GetRoleDisplayName returns the display name for the user's role
@@ -123,12 +111,8 @@ func (u *User) GetRoleDisplayName() string {
 	switch u.Role {
 	case RoleAdmin:
 		return "ผู้ดูแลระบบ"
-	case RoleManager:
-		return "หัวหน้าแผนก"
-	case RoleNurse:
-		return "พยาบาลวิชาชีพ"
-	case RoleAssistant:
-		return "ผู้ช่วยพยาบาล"
+	case RoleUser:
+		return "ผู้ใช้งาน"
 	default:
 		return "ไม่ระบุ"
 	}
@@ -147,45 +131,13 @@ func (u *User) GetPermissions() []string {
 			"notifications:create", "notifications:read", "notifications:update", "notifications:delete",
 			"organization:read", "organization:update",
 		}...)
-	case RoleManager:
+	case RoleUser:
 		permissions = append(permissions, []string{
-			"users:read", "users:update",
 			"departments:read", "departments:update",
 			"schedules:create", "schedules:read", "schedules:update",
-			"notifications:read",
-		}...)
-	case RoleNurse, RoleAssistant:
-		permissions = append(permissions, []string{
-			"schedules:read",
 			"notifications:read",
 		}...)
 	}
 
 	return permissions
 }
-
-// Methods for Organization entity
-
-// IsSubscriptionActive checks if the organization's subscription is active
-func (o *Organization) IsSubscriptionActive() bool {
-	if o.SubscriptionExpiresAt == nil {
-		return false
-	}
-	return time.Now().Before(*o.SubscriptionExpiresAt)
-}
-
-// GetPackageDisplayName returns the display name for the package type
-func (o *Organization) GetPackageDisplayName() string {
-	switch o.PackageType {
-	case "trial":
-		return "แพ็คเกจทดลองใช้"
-	case "standard":
-		return "แพ็คเกจมาตรฐาน"
-	case "enterprise":
-		return "แพ็คเกจระดับองค์กร"
-	default:
-		return "ไม่ระบุ"
-	}
-}
-
-

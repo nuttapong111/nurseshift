@@ -3,7 +3,7 @@
 # NurseShift Microservices Startup Script
 # This script starts all microservices for local development
 
-PROJECT_ROOT="/Volumes/NO NAME/project/nurseshift"
+PROJECT_ROOT="/Volumes/NO NAME/project/nurseshift_final"
 BACKEND_DIR="$PROJECT_ROOT/backend"
 
 # Colors for output

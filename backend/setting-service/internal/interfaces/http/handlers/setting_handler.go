@@ -98,5 +98,3 @@ func (h *SettingHandler) Health(c *fiber.Ctx) error {
 		"timestamp": time.Now(),
 	})
 }
-
-

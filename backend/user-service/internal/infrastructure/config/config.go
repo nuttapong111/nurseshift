@@ -75,7 +75,7 @@ func Load() (*Config, error) {
 
 	config := &Config{
 		Server: ServerConfig{
-			Port: getEnv("PORT", "8081"),
+			Port: getEnv("PORT", "8082"),
 			Env:  getEnv("ENV", "development"),
 		},
 		Database: DatabaseConfig{
@@ -126,7 +126,10 @@ func (c *Config) validate() error {
 		return fmt.Errorf("database name is required")
 	}
 	if c.JWT.Secret == "" || c.JWT.Secret == "your-secret-key" {
-		return fmt.Errorf("JWT secret must be set and not be the default value")
+		// Allow default JWT secret in development
+		if c.Server.Env == "production" {
+			return fmt.Errorf("JWT secret must be set and not be the default value in production")
+		}
 	}
 	return nil
 }
@@ -183,5 +186,3 @@ func getEnvAsBool(key string, defaultValue bool) bool {
 	}
 	return defaultValue
 }
-
-

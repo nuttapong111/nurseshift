@@ -15,9 +15,8 @@ type introspectResponse struct {
 	Status string `json:"status"`
 	Active bool   `json:"active"`
 	Claims struct {
-		UserID         string `json:"userId"`
-		Role           string `json:"role"`
-		OrganizationID string `json:"organizationId"`
+		UserID string `json:"userId"`
+		Role   string `json:"role"`
 	} `json:"claims"`
 }
 
@@ -72,7 +71,6 @@ func AuthMiddleware() fiber.Handler {
 		// Store user information in context
 		c.Locals("userID", introspect.Claims.UserID)
 		c.Locals("userRole", introspect.Claims.Role)
-		c.Locals("organizationID", introspect.Claims.OrganizationID)
 
 		return c.Next()
 	}
@@ -109,7 +107,6 @@ func OptionalAuthMiddleware() fiber.Handler {
 			if err := json.NewDecoder(resp.Body).Decode(&introspect); err == nil && introspect.Active {
 				c.Locals("userID", introspect.Claims.UserID)
 				c.Locals("userRole", introspect.Claims.Role)
-				c.Locals("organizationID", introspect.Claims.OrganizationID)
 			}
 		}
 

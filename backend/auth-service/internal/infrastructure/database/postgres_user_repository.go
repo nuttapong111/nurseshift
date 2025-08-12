@@ -139,6 +139,20 @@ func (r *PostgresUserRepository) UpdateLastLogin(ctx context.Context, userID uui
 	return nil
 }
 
+// UpdatePassword updates the user's password
+func (r *PostgresUserRepository) UpdatePassword(ctx context.Context, userID uuid.UUID, hashedPassword string) error {
+	query := fmt.Sprintf(`
+		UPDATE %s.users SET password_hash = $2, updated_at = $3
+		WHERE id = $1`, r.schema)
+
+	_, err := r.db.ExecContext(ctx, query, userID, hashedPassword, time.Now())
+	if err != nil {
+		return fmt.Errorf("failed to update password: %w", err)
+	}
+
+	return nil
+}
+
 // EmailExists checks if an email already exists
 func (r *PostgresUserRepository) EmailExists(ctx context.Context, email string) (bool, error) {
 	query := fmt.Sprintf(`

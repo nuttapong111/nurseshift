@@ -2,6 +2,8 @@ package routes
 
 import (
 	"nurseshift/auth-service/internal/domain/usecases"
+	"nurseshift/auth-service/internal/infrastructure/config"
+	"nurseshift/auth-service/internal/infrastructure/services"
 	"nurseshift/auth-service/internal/interfaces/http/handlers"
 	"nurseshift/auth-service/internal/interfaces/http/middleware"
 
@@ -9,8 +11,20 @@ import (
 )
 
 // SetupAuthRoutes sets up authentication-related routes
-func SetupAuthRoutes(app *fiber.App, authUseCase usecases.AuthUseCase, jwtService usecases.JWTService, jwtSecret string) {
-	authHandler := handlers.NewAuthHandler(authUseCase, jwtService)
+func SetupAuthRoutes(app *fiber.App, authUseCase usecases.AuthUseCase, jwtService usecases.JWTService, jwtSecret string, cfg *config.Config) {
+	// Initialize services based on configuration
+	var emailService services.EmailService
+	
+	if cfg.Email.Provider == "gmail" && cfg.Email.FromEmail != "" && cfg.Email.FromPassword != "" {
+		emailService = services.NewGmailEmailService(cfg.Email.FromEmail, cfg.Email.FromPassword)
+	} else {
+		// Use mock service if email is not configured
+		emailService = services.NewMockEmailService()
+	}
+	
+	passwordResetService := services.NewInMemoryPasswordResetService()
+	
+	authHandler := handlers.NewAuthHandler(authUseCase, jwtService, emailService, passwordResetService)
 
 	// Public routes (no authentication required)
 	auth := app.Group("/api/v1/auth")

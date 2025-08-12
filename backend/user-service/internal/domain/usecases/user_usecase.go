@@ -2,73 +2,27 @@ package usecases
 
 import (
 	"context"
-	"time"
-
+	"fmt"
 	"nurseshift/user-service/internal/domain/entities"
 	"nurseshift/user-service/internal/domain/repositories"
-
-	"github.com/google/uuid"
 )
 
-// UserUseCase interface for user business logic
+// UserUseCase defines the interface for user business logic operations
 type UserUseCase interface {
-	GetProfile(ctx context.Context, userID uuid.UUID) (*entities.User, error)
-	UpdateProfile(ctx context.Context, userID uuid.UUID, req *UpdateProfileRequest) (*entities.User, error)
-	GetUsers(ctx context.Context, organizationID uuid.UUID, req *GetUsersRequest) (*GetUsersResponse, error)
-	GetUser(ctx context.Context, userID, requesterID uuid.UUID) (*entities.User, error)
-	SearchUsers(ctx context.Context, organizationID uuid.UUID, req *SearchUsersRequest) (*SearchUsersResponse, error)
-	GetUserStats(ctx context.Context, organizationID uuid.UUID) (*UserStatsResponse, error)
-	UploadAvatar(ctx context.Context, userID uuid.UUID, avatarURL string) error
-}
+	// Basic user operations
+	GetProfile(ctx context.Context, userID string) (*entities.User, error)
+	UpdateProfile(ctx context.Context, userID string, req *UpdateProfileRequest) (*entities.User, error)
+	UploadAvatar(ctx context.Context, userID string, avatarURL string) error
 
-// Request/Response types
-type UpdateProfileRequest struct {
-	FirstName   *string    `json:"firstName"`
-	LastName    *string    `json:"lastName"`
-	Phone       *string    `json:"phone"`
-	Position    *string    `json:"position"`
-	DateOfBirth *time.Time `json:"dateOfBirth"`
-}
+	// User management operations (admin only)
+	GetUsers(ctx context.Context, requesterID string, req repositories.GetUsersRequest) (*repositories.GetUsersResponse, error)
+	SearchUsers(ctx context.Context, requesterID string, req repositories.SearchUsersRequest) (*repositories.SearchUsersResponse, error)
+	GetUserStats(ctx context.Context, requesterID string) (*repositories.UserStatsResponse, error)
 
-type GetUsersRequest struct {
-	Role         *entities.UserRole   `json:"role"`
-	Status       *entities.UserStatus `json:"status"`
-	DepartmentID *uuid.UUID           `json:"departmentId"`
-	Page         int                  `json:"page"`
-	Limit        int                  `json:"limit"`
-}
-
-type GetUsersResponse struct {
-	Users      []*entities.User `json:"users"`
-	Total      int              `json:"total"`
-	Page       int              `json:"page"`
-	Limit      int              `json:"limit"`
-	TotalPages int              `json:"totalPages"`
-}
-
-type SearchUsersRequest struct {
-	Query  string               `json:"query"`
-	Role   *entities.UserRole   `json:"role"`
-	Status *entities.UserStatus `json:"status"`
-	Page   int                  `json:"page"`
-	Limit  int                  `json:"limit"`
-}
-
-type SearchUsersResponse struct {
-	Users      []*entities.User `json:"users"`
-	Total      int              `json:"total"`
-	Page       int              `json:"page"`
-	Limit      int              `json:"limit"`
-	TotalPages int              `json:"totalPages"`
-}
-
-type UserStatsResponse struct {
-	TotalUsers     int `json:"totalUsers"`
-	ActiveUsers    int `json:"activeUsers"`
-	InactiveUsers  int `json:"inactiveUsers"`
-	NurseCount     int `json:"nurseCount"`
-	AssistantCount int `json:"assistantCount"`
-	ManagerCount   int `json:"managerCount"`
+	// Email verification methods
+	SendVerificationEmail(ctx context.Context, email string) error
+	VerifyEmail(ctx context.Context, token string) error
+	IsEmailVerified(ctx context.Context, email string) (bool, error)
 }
 
 // UserUseCaseImpl implements UserUseCase
@@ -76,129 +30,199 @@ type UserUseCaseImpl struct {
 	userRepo repositories.UserRepository
 }
 
-// NewUserUseCase creates a new user use case
+// NewUserUseCase creates a new instance of UserUseCase
 func NewUserUseCase(userRepo repositories.UserRepository) UserUseCase {
 	return &UserUseCaseImpl{
 		userRepo: userRepo,
 	}
 }
 
-// GetProfile returns user profile
-func (uc *UserUseCaseImpl) GetProfile(ctx context.Context, userID uuid.UUID) (*entities.User, error) {
-	// Mock implementation
-	user := &entities.User{
-		ID:        userID,
-		FirstName: "สมชาย",
-		LastName:  "ใจดี",
-		Email:     "test@example.com",
-		Role:      entities.RoleNurse,
-		Status:    entities.StatusActive,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+// GetProfile retrieves the profile of the authenticated user
+func (uc *UserUseCaseImpl) GetProfile(ctx context.Context, userID string) (*entities.User, error) {
+	user, err := uc.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user profile: %w", err)
 	}
+
+	// Check email verification status
+	emailVerified, err := uc.userRepo.IsEmailVerified(ctx, user.Email)
+	if err != nil {
+		// Log error but don't fail the request
+		fmt.Printf("Warning: failed to check email verification status: %v\n", err)
+		emailVerified = false
+	}
+
+	// Set email verification status
+	user.EmailVerified = emailVerified
+
 	return user, nil
 }
 
-// UpdateProfile updates user profile
-func (uc *UserUseCaseImpl) UpdateProfile(ctx context.Context, userID uuid.UUID, req *UpdateProfileRequest) (*entities.User, error) {
-	// Mock implementation
-	user := &entities.User{
-		ID:        userID,
-		FirstName: getStringValue(req.FirstName, "สมชาย"),
-		LastName:  getStringValue(req.LastName, "ใจดี"),
-		Phone:     req.Phone,
-		Position:  req.Position,
-		UpdatedAt: time.Now(),
+// UpdateProfile updates the profile of the authenticated user
+func (uc *UserUseCaseImpl) UpdateProfile(ctx context.Context, userID string, req *UpdateProfileRequest) (*entities.User, error) {
+	// Get current user
+	user, err := uc.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
+
+	// Update fields
+	if req.FirstName != "" {
+		user.FirstName = req.FirstName
+	}
+	if req.LastName != "" {
+		user.LastName = req.LastName
+	}
+	if req.Phone != "" {
+		user.Phone = &req.Phone
+	}
+	if req.Position != "" {
+		user.Position = &req.Position
+	}
+
+	// Save to database
+	err = uc.userRepo.Update(ctx, user)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update user profile: %w", err)
+	}
+
 	return user, nil
 }
 
-// GetUsers returns paginated list of users
-func (uc *UserUseCaseImpl) GetUsers(ctx context.Context, organizationID uuid.UUID, req *GetUsersRequest) (*GetUsersResponse, error) {
-	// Mock implementation
-	users := []*entities.User{
-		{
-			ID:        uuid.New(),
-			FirstName: "สมชาย",
-			LastName:  "ใจดี",
-			Email:     "nurse1@example.com",
-			Role:      entities.RoleNurse,
-			Status:    entities.StatusActive,
-		},
-		{
-			ID:        uuid.New(),
-			FirstName: "สมหญิง",
-			LastName:  "รักดี",
-			Email:     "nurse2@example.com",
-			Role:      entities.RoleNurse,
-			Status:    entities.StatusActive,
-		},
+// UploadAvatar updates the user's avatar URL
+func (uc *UserUseCaseImpl) UploadAvatar(ctx context.Context, userID string, avatarURL string) error {
+	// Get current user
+	user, err := uc.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("failed to get user: %w", err)
 	}
 
-	totalPages := (len(users) + req.Limit - 1) / req.Limit
+	// Update avatar URL
+	user.AvatarURL = &avatarURL
 
-	return &GetUsersResponse{
-		Users:      users,
-		Total:      len(users),
-		Page:       req.Page,
-		Limit:      req.Limit,
-		TotalPages: totalPages,
-	}, nil
-}
-
-// GetUser returns specific user details
-func (uc *UserUseCaseImpl) GetUser(ctx context.Context, userID, requesterID uuid.UUID) (*entities.User, error) {
-	// Mock implementation
-	user := &entities.User{
-		ID:        userID,
-		FirstName: "สมชาย",
-		LastName:  "ใจดี",
-		Email:     "test@example.com",
-		Role:      entities.RoleNurse,
-		Status:    entities.StatusActive,
+	// Save to database
+	err = uc.userRepo.Update(ctx, user)
+	if err != nil {
+		return fmt.Errorf("failed to update avatar: %w", err)
 	}
-	return user, nil
-}
 
-// SearchUsers searches users by query
-func (uc *UserUseCaseImpl) SearchUsers(ctx context.Context, organizationID uuid.UUID, req *SearchUsersRequest) (*SearchUsersResponse, error) {
-	// Mock implementation
-	users := []*entities.User{}
-
-	totalPages := (len(users) + req.Limit - 1) / req.Limit
-
-	return &SearchUsersResponse{
-		Users:      users,
-		Total:      len(users),
-		Page:       req.Page,
-		Limit:      req.Limit,
-		TotalPages: totalPages,
-	}, nil
-}
-
-// GetUserStats returns user statistics
-func (uc *UserUseCaseImpl) GetUserStats(ctx context.Context, organizationID uuid.UUID) (*UserStatsResponse, error) {
-	// Mock implementation
-	return &UserStatsResponse{
-		TotalUsers:     25,
-		ActiveUsers:    22,
-		InactiveUsers:  3,
-		NurseCount:     15,
-		AssistantCount: 8,
-		ManagerCount:   2,
-	}, nil
-}
-
-// UploadAvatar uploads user avatar
-func (uc *UserUseCaseImpl) UploadAvatar(ctx context.Context, userID uuid.UUID, avatarURL string) error {
-	// Mock implementation - in real scenario, this would update the database
 	return nil
 }
 
-// Helper functions
-func getStringValue(ptr *string, defaultValue string) string {
-	if ptr != nil {
-		return *ptr
+// GetUsers retrieves a list of users (admin only)
+func (uc *UserUseCaseImpl) GetUsers(ctx context.Context, requesterID string, req repositories.GetUsersRequest) (*repositories.GetUsersResponse, error) {
+	// Check if requester is admin
+	requester, err := uc.userRepo.GetByID(ctx, requesterID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get requester: %w", err)
 	}
-	return defaultValue
+
+	if !requester.IsAdmin() {
+		return nil, fmt.Errorf("insufficient permissions")
+	}
+
+	// Get users from repository
+	response, err := uc.userRepo.GetUsers(ctx, &req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get users: %w", err)
+	}
+
+	return response, nil
+}
+
+// SearchUsers searches for users based on query (admin only)
+func (uc *UserUseCaseImpl) SearchUsers(ctx context.Context, requesterID string, req repositories.SearchUsersRequest) (*repositories.SearchUsersResponse, error) {
+	// Check if requester is admin
+	requester, err := uc.userRepo.GetByID(ctx, requesterID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get requester: %w", err)
+	}
+
+	if !requester.IsAdmin() {
+		return nil, fmt.Errorf("insufficient permissions")
+	}
+
+	// Search users from repository
+	response, err := uc.userRepo.SearchUsers(ctx, &req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to search users: %w", err)
+	}
+
+	return response, nil
+}
+
+// GetUserStats retrieves user statistics (admin only)
+func (uc *UserUseCaseImpl) GetUserStats(ctx context.Context, requesterID string) (*repositories.UserStatsResponse, error) {
+	// Check if requester is admin
+	requester, err := uc.userRepo.GetByID(ctx, requesterID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get requester: %w", err)
+	}
+
+	if !requester.IsAdmin() {
+		return nil, fmt.Errorf("insufficient permissions")
+	}
+
+	// Get stats from repository
+	stats, err := uc.userRepo.GetUserStats(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user stats: %w", err)
+	}
+
+	return stats, nil
+}
+
+// Email verification methods
+func (uc *UserUseCaseImpl) SendVerificationEmail(ctx context.Context, email string) error {
+	// Check if user exists
+	_, err := uc.userRepo.GetByEmail(ctx, email)
+	if err != nil {
+		return fmt.Errorf("user not found: %w", err)
+	}
+
+	// Check if email is already verified
+	verified, err := uc.userRepo.IsEmailVerified(ctx, email)
+	if err != nil {
+		return fmt.Errorf("failed to check email verification status: %w", err)
+	}
+
+	if verified {
+		return fmt.Errorf("email is already verified")
+	}
+
+	// Send verification email
+	err = uc.userRepo.SendVerificationEmail(ctx, email)
+	if err != nil {
+		return fmt.Errorf("failed to send verification email: %w", err)
+	}
+
+	return nil
+}
+
+func (uc *UserUseCaseImpl) VerifyEmail(ctx context.Context, token string) error {
+	// Verify email with token
+	err := uc.userRepo.VerifyEmail(ctx, token)
+	if err != nil {
+		return fmt.Errorf("failed to verify email: %w", err)
+	}
+
+	return nil
+}
+
+func (uc *UserUseCaseImpl) IsEmailVerified(ctx context.Context, email string) (bool, error) {
+	// Check email verification status
+	verified, err := uc.userRepo.IsEmailVerified(ctx, email)
+	if err != nil {
+		return false, fmt.Errorf("failed to check email verification status: %w", err)
+	}
+
+	return verified, nil
+}
+
+// UpdateProfileRequest represents the request to update a user profile
+type UpdateProfileRequest struct {
+	FirstName string `json:"firstName"`
+	LastName  string `json:"lastName"`
+	Phone     string `json:"phone"`
+	Position  string `json:"position"`
 }

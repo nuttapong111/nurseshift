@@ -6,99 +6,28 @@ import (
 	"fmt"
 	"time"
 
+	"nurseshift/user-service/internal/domain/entities"
+	"nurseshift/user-service/internal/domain/repositories"
+	"nurseshift/user-service/internal/infrastructure/services"
+
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
 )
 
-// UserRole represents user roles
-type UserRole string
-
-const (
-	RoleAdmin        UserRole = "admin"
-	RoleManager      UserRole = "manager"
-	RoleNurse        UserRole = "nurse"
-	RoleCoordinator  UserRole = "coordinator"
-	RoleSupervisor   UserRole = "supervisor"
-	RoleAdministrator UserRole = "administrator"
-)
-
-// UserStatus represents user status
-type UserStatus string
-
-const (
-	StatusActive   UserStatus = "active"
-	StatusInactive UserStatus = "inactive"
-	StatusSuspended UserStatus = "suspended"
-)
-
-// User represents a user entity
-type User struct {
-	ID             uuid.UUID  `json:"id"`
-	OrganizationID uuid.UUID  `json:"organizationId"`
-	EmployeeID     string     `json:"employeeId"`
-	Email          string     `json:"email"`
-	PasswordHash   string     `json:"-"`
-	FirstName      string     `json:"firstName"`
-	LastName       string     `json:"lastName"`
-	Phone          string     `json:"phone"`
-	Role           UserRole   `json:"role"`
-	Status         UserStatus `json:"status"`
-	Position       string     `json:"position"`
-	DateJoined     time.Time  `json:"dateJoined"`
-	DateOfBirth    *time.Time `json:"dateOfBirth"`
-	AvatarURL      *string    `json:"avatarUrl"`
-	LastLoginAt    *time.Time `json:"lastLoginAt"`
-	CreatedAt      time.Time  `json:"createdAt"`
-	UpdatedAt      time.Time  `json:"updatedAt"`
-}
-
-// Organization represents an organization entity
-type Organization struct {
-	ID                    uuid.UUID  `json:"id"`
-	Name                  string     `json:"name"`
-	Description           string     `json:"description"`
-	Email                 string     `json:"email"`
-	Phone                 string     `json:"phone"`
-	Address               string     `json:"address"`
-	Website               *string    `json:"website"`
-	LicenseNumber         string     `json:"licenseNumber"`
-	SubscriptionExpiresAt *time.Time `json:"subscriptionExpiresAt"`
-	PackageType           string     `json:"packageType"`
-	MaxUsers              int        `json:"maxUsers"`
-	MaxDepartments        int        `json:"maxDepartments"`
-	CreatedAt             time.Time  `json:"createdAt"`
-	UpdatedAt             time.Time  `json:"updatedAt"`
-}
-
-// UserSession represents a user session entity
-type UserSession struct {
-	ID         uuid.UUID  `json:"id"`
-	UserID     uuid.UUID  `json:"userId"`
-	TokenHash  string     `json:"tokenHash"`
-	IPAddress  string     `json:"ipAddress"`
-	UserAgent  string     `json:"userAgent"`
-	CreatedAt  time.Time  `json:"createdAt"`
-	ExpiresAt  time.Time  `json:"expiresAt"`
-	RevokedAt  *time.Time `json:"revokedAt"`
-}
-
 // UserRepository interface for user operations
 type UserRepository interface {
-	GetByID(ctx context.Context, id uuid.UUID) (*User, error)
-	GetByEmail(ctx context.Context, email string) (*User, error)
-	GetByEmployeeID(ctx context.Context, employeeID string) (*User, error)
-	Create(ctx context.Context, user *User) error
-	Update(ctx context.Context, user *User) error
-	UpdateLastLogin(ctx context.Context, userID uuid.UUID) error
-	GetOrganizationByID(ctx context.Context, id uuid.UUID) (*Organization, error)
-	GetOrganizationByUser(ctx context.Context, userID uuid.UUID) (*Organization, error)
-	CreateSession(ctx context.Context, session *UserSession) error
-	GetSessionByToken(ctx context.Context, tokenHash string) (*UserSession, error)
-	RevokeSession(ctx context.Context, sessionID uuid.UUID) error
-	RevokeAllUserSessions(ctx context.Context, userID uuid.UUID) error
-	CleanExpiredSessions(ctx context.Context) error
+	GetByID(ctx context.Context, id string) (*entities.User, error)
+	GetByEmail(ctx context.Context, email string) (*entities.User, error)
+	Create(ctx context.Context, user *entities.User) error
+	Update(ctx context.Context, user *entities.User) error
+	UpdateLastLogin(ctx context.Context, userID string) error
+	GetUsers(ctx context.Context, req *repositories.GetUsersRequest) (*repositories.GetUsersResponse, error)
+	SearchUsers(ctx context.Context, req *repositories.SearchUsersRequest) (*repositories.SearchUsersResponse, error)
+	GetUserStats(ctx context.Context) (*repositories.UserStatsResponse, error)
 	EmailExists(ctx context.Context, email string) (bool, error)
-	EmployeeIDExists(ctx context.Context, employeeID string, organizationID uuid.UUID) (bool, error)
+	SendVerificationEmail(ctx context.Context, email string) error
+	VerifyEmail(ctx context.Context, token string) error
+	IsEmailVerified(ctx context.Context, email string) (bool, error)
 }
 
 // PostgresUserRepository implements UserRepository using PostgreSQL
@@ -116,20 +45,26 @@ func NewPostgresUserRepository(db *sql.DB, schema string) UserRepository {
 }
 
 // GetByID retrieves a user by ID
-func (r *PostgresUserRepository) GetByID(ctx context.Context, id uuid.UUID) (*User, error) {
+func (r *PostgresUserRepository) GetByID(ctx context.Context, id string) (*entities.User, error) {
+	userUUID, err := uuid.Parse(id)
+	if err != nil {
+		return nil, fmt.Errorf("invalid user ID format: %w", err)
+	}
+
 	query := fmt.Sprintf(`
-		SELECT id, organization_id, employee_id, email, password_hash, first_name, last_name,
-			   phone, role, status, position, date_joined, date_of_birth, avatar_url,
-			   last_login_at, created_at, updated_at
+		SELECT id, email, password_hash, first_name, last_name, phone, role, status, position,
+			   days_remaining, subscription_expires_at, package_type, max_departments, avatar_url,
+			   settings, last_login_at, created_at, updated_at, email_verified, email_verification_token, email_verification_expires_at
 		FROM %s.users 
 		WHERE id = $1 AND status = 'active'`, r.schema)
 
-	user := &User{}
-	err := r.db.QueryRowContext(ctx, query, id).Scan(
-		&user.ID, &user.OrganizationID, &user.EmployeeID, &user.Email, &user.PasswordHash,
-		&user.FirstName, &user.LastName, &user.Phone, &user.Role, &user.Status,
-		&user.Position, &user.DateJoined, &user.DateOfBirth, &user.AvatarURL,
-		&user.LastLoginAt, &user.CreatedAt, &user.UpdatedAt,
+	user := &entities.User{}
+	err = r.db.QueryRowContext(ctx, query, userUUID).Scan(
+		&user.ID, &user.Email, &user.PasswordHash, &user.FirstName, &user.LastName,
+		&user.Phone, &user.Role, &user.Status, &user.Position, &user.DaysRemaining,
+		&user.SubscriptionExpiresAt, &user.PackageType, &user.MaxDepartments,
+		&user.AvatarURL, &user.Settings, &user.LastLoginAt, &user.CreatedAt, &user.UpdatedAt,
+		&user.EmailVerified, &user.EmailVerificationToken, &user.EmailVerificationExpiresAt,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -142,20 +77,21 @@ func (r *PostgresUserRepository) GetByID(ctx context.Context, id uuid.UUID) (*Us
 }
 
 // GetByEmail retrieves a user by email
-func (r *PostgresUserRepository) GetByEmail(ctx context.Context, email string) (*User, error) {
+func (r *PostgresUserRepository) GetByEmail(ctx context.Context, email string) (*entities.User, error) {
 	query := fmt.Sprintf(`
-		SELECT id, organization_id, employee_id, email, password_hash, first_name, last_name,
-			   phone, role, status, position, date_joined, date_of_birth, avatar_url,
-			   last_login_at, created_at, updated_at
+		SELECT id, email, password_hash, first_name, last_name, phone, role, status, position,
+			   days_remaining, subscription_expires_at, package_type, max_departments, avatar_url,
+			   settings, last_login_at, created_at, updated_at, email_verified, email_verification_token, email_verification_expires_at
 		FROM %s.users 
 		WHERE email = $1`, r.schema)
 
-	user := &User{}
+	user := &entities.User{}
 	err := r.db.QueryRowContext(ctx, query, email).Scan(
-		&user.ID, &user.OrganizationID, &user.EmployeeID, &user.Email, &user.PasswordHash,
-		&user.FirstName, &user.LastName, &user.Phone, &user.Role, &user.Status,
-		&user.Position, &user.DateJoined, &user.DateOfBirth, &user.AvatarURL,
-		&user.LastLoginAt, &user.CreatedAt, &user.UpdatedAt,
+		&user.ID, &user.Email, &user.PasswordHash, &user.FirstName, &user.LastName,
+		&user.Phone, &user.Role, &user.Status, &user.Position, &user.DaysRemaining,
+		&user.SubscriptionExpiresAt, &user.PackageType, &user.MaxDepartments,
+		&user.AvatarURL, &user.Settings, &user.LastLoginAt, &user.CreatedAt, &user.UpdatedAt,
+		&user.EmailVerified, &user.EmailVerificationToken, &user.EmailVerificationExpiresAt,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -167,43 +103,17 @@ func (r *PostgresUserRepository) GetByEmail(ctx context.Context, email string) (
 	return user, nil
 }
 
-// GetByEmployeeID retrieves a user by employee ID
-func (r *PostgresUserRepository) GetByEmployeeID(ctx context.Context, employeeID string) (*User, error) {
-	query := fmt.Sprintf(`
-		SELECT id, organization_id, employee_id, email, password_hash, first_name, last_name,
-			   phone, role, status, position, date_joined, date_of_birth, avatar_url,
-			   last_login_at, created_at, updated_at
-		FROM %s.users 
-		WHERE employee_id = $1`, r.schema)
-
-	user := &User{}
-	err := r.db.QueryRowContext(ctx, query, employeeID).Scan(
-		&user.ID, &user.OrganizationID, &user.EmployeeID, &user.Email, &user.PasswordHash,
-		&user.FirstName, &user.LastName, &user.Phone, &user.Role, &user.Status,
-		&user.Position, &user.DateJoined, &user.DateOfBirth, &user.AvatarURL,
-		&user.LastLoginAt, &user.CreatedAt, &user.UpdatedAt,
-	)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("user not found")
-		}
-		return nil, fmt.Errorf("failed to get user by employee ID: %w", err)
-	}
-
-	return user, nil
-}
-
 // Create creates a new user
-func (r *PostgresUserRepository) Create(ctx context.Context, user *User) error {
+func (r *PostgresUserRepository) Create(ctx context.Context, user *entities.User) error {
 	query := fmt.Sprintf(`
-		INSERT INTO %s.users (id, organization_id, employee_id, email, password_hash, 
-							  first_name, last_name, phone, role, status, position, date_joined)
+		INSERT INTO %s.users (id, email, password_hash, first_name, last_name, phone, 
+							  role, status, position, days_remaining, package_type, max_departments)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`, r.schema)
 
 	_, err := r.db.ExecContext(ctx, query,
-		user.ID, user.OrganizationID, user.EmployeeID, user.Email, user.PasswordHash,
-		user.FirstName, user.LastName, user.Phone, user.Role, user.Status,
-		user.Position, user.DateJoined,
+		user.ID, user.Email, user.PasswordHash, user.FirstName, user.LastName,
+		user.Phone, user.Role, user.Status, user.Position, user.DaysRemaining,
+		user.PackageType, user.MaxDepartments,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create user: %w", err)
@@ -213,7 +123,7 @@ func (r *PostgresUserRepository) Create(ctx context.Context, user *User) error {
 }
 
 // Update updates an existing user
-func (r *PostgresUserRepository) Update(ctx context.Context, user *User) error {
+func (r *PostgresUserRepository) Update(ctx context.Context, user *entities.User) error {
 	query := fmt.Sprintf(`
 		UPDATE %s.users 
 		SET first_name = $2, last_name = $3, phone = $4, position = $5, 
@@ -232,14 +142,19 @@ func (r *PostgresUserRepository) Update(ctx context.Context, user *User) error {
 }
 
 // UpdateLastLogin updates the user's last login timestamp
-func (r *PostgresUserRepository) UpdateLastLogin(ctx context.Context, userID uuid.UUID) error {
+func (r *PostgresUserRepository) UpdateLastLogin(ctx context.Context, userID string) error {
+	userUUID, err := uuid.Parse(userID)
+	if err != nil {
+		return fmt.Errorf("invalid user ID format: %w", err)
+	}
+
 	query := fmt.Sprintf(`
 		UPDATE %s.users 
 		SET last_login_at = $2 
 		WHERE id = $1`, r.schema)
 
 	now := time.Now()
-	_, err := r.db.ExecContext(ctx, query, userID, now)
+	_, err = r.db.ExecContext(ctx, query, userUUID, now)
 	if err != nil {
 		return fmt.Errorf("failed to update last login: %w", err)
 	}
@@ -247,137 +162,167 @@ func (r *PostgresUserRepository) UpdateLastLogin(ctx context.Context, userID uui
 	return nil
 }
 
-// GetOrganizationByID retrieves an organization by ID
-func (r *PostgresUserRepository) GetOrganizationByID(ctx context.Context, id uuid.UUID) (*Organization, error) {
-	query := fmt.Sprintf(`
-		SELECT id, name, description, email, phone, address, website, license_number,
-			   subscription_expires_at, package_type, max_users, max_departments,
-			   created_at, updated_at
-		FROM %s.organizations 
-		WHERE id = $1`, r.schema)
+// GetUsers returns paginated list of users
+func (r *PostgresUserRepository) GetUsers(ctx context.Context, req *repositories.GetUsersRequest) (*repositories.GetUsersResponse, error) {
+	// Build WHERE clause
+	whereClause := "WHERE 1=1"
+	args := []interface{}{}
+	argCount := 1
 
-	org := &Organization{}
-	err := r.db.QueryRowContext(ctx, query, id).Scan(
-		&org.ID, &org.Name, &org.Description, &org.Email, &org.Phone, &org.Address,
-		&org.Website, &org.LicenseNumber, &org.SubscriptionExpiresAt, &org.PackageType,
-		&org.MaxUsers, &org.MaxDepartments, &org.CreatedAt, &org.UpdatedAt,
-	)
+	if req.Role != nil {
+		whereClause += fmt.Sprintf(" AND role = $%d", argCount)
+		args = append(args, *req.Role)
+		argCount++
+	}
+
+	if req.Status != nil {
+		whereClause += fmt.Sprintf(" AND status = $%d", argCount)
+		args = append(args, *req.Status)
+		argCount++
+	}
+
+	// Count total users
+	countQuery := fmt.Sprintf(`SELECT COUNT(*) FROM %s.users %s`, r.schema, whereClause)
+	var total int
+	err := r.db.QueryRowContext(ctx, countQuery, args...).Scan(&total)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("organization not found")
+		return nil, fmt.Errorf("failed to count users: %w", err)
+	}
+
+	// Get users with pagination
+	offset := (req.Page - 1) * req.Limit
+	query := fmt.Sprintf(`
+		SELECT id, email, first_name, last_name, phone, role, status, position,
+			   days_remaining, subscription_expires_at, package_type, max_departments, avatar_url,
+			   settings, last_login_at, created_at, updated_at
+		FROM %s.users %s
+		ORDER BY created_at DESC
+		LIMIT $%d OFFSET $%d`, r.schema, whereClause, argCount, argCount+1)
+
+	args = append(args, req.Limit, offset)
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get users: %w", err)
+	}
+	defer rows.Close()
+
+	var users []*entities.User
+	for rows.Next() {
+		user := &entities.User{}
+		err := rows.Scan(
+			&user.ID, &user.Email, &user.FirstName, &user.LastName, &user.Phone,
+			&user.Role, &user.Status, &user.Position, &user.DaysRemaining,
+			&user.SubscriptionExpiresAt, &user.PackageType, &user.MaxDepartments,
+			&user.AvatarURL, &user.Settings, &user.LastLoginAt, &user.CreatedAt, &user.UpdatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan user: %w", err)
 		}
-		return nil, fmt.Errorf("failed to get organization: %w", err)
+		users = append(users, user)
 	}
 
-	return org, nil
+	totalPages := (total + req.Limit - 1) / req.Limit
+
+	return &repositories.GetUsersResponse{
+		Users:      users,
+		Total:      total,
+		Page:       req.Page,
+		Limit:      req.Limit,
+		TotalPages: totalPages,
+	}, nil
 }
 
-// GetOrganizationByUser retrieves the organization for a specific user
-func (r *PostgresUserRepository) GetOrganizationByUser(ctx context.Context, userID uuid.UUID) (*Organization, error) {
-	query := fmt.Sprintf(`
-		SELECT o.id, o.name, o.description, o.email, o.phone, o.address, o.website, 
-			   o.license_number, o.subscription_expires_at, o.package_type, o.max_users, 
-			   o.max_departments, o.created_at, o.updated_at
-		FROM %s.organizations o
-		JOIN %s.users u ON u.organization_id = o.id
-		WHERE u.id = $1`, r.schema, r.schema)
+// SearchUsers searches users by query
+func (r *PostgresUserRepository) SearchUsers(ctx context.Context, req *repositories.SearchUsersRequest) (*repositories.SearchUsersResponse, error) {
+	// Build WHERE clause
+	whereClause := "WHERE (first_name ILIKE $1 OR last_name ILIKE $1 OR email ILIKE $1)"
+	args := []interface{}{"%" + req.Query + "%"}
+	argCount := 2
 
-	org := &Organization{}
-	err := r.db.QueryRowContext(ctx, query, userID).Scan(
-		&org.ID, &org.Name, &org.Description, &org.Email, &org.Phone, &org.Address,
-		&org.Website, &org.LicenseNumber, &org.SubscriptionExpiresAt, &org.PackageType,
-		&org.MaxUsers, &org.MaxDepartments, &org.CreatedAt, &org.UpdatedAt,
-	)
+	if req.Role != nil {
+		whereClause += fmt.Sprintf(" AND role = $%d", argCount)
+		args = append(args, *req.Role)
+		argCount++
+	}
+
+	if req.Status != nil {
+		whereClause += fmt.Sprintf(" AND status = $%d", argCount)
+		args = append(args, *req.Status)
+		argCount++
+	}
+
+	// Count total users
+	countQuery := fmt.Sprintf(`SELECT COUNT(*) FROM %s.users %s`, r.schema, whereClause)
+	var total int
+	err := r.db.QueryRowContext(ctx, countQuery, args...).Scan(&total)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("organization not found for user")
+		return nil, fmt.Errorf("failed to count users: %w", err)
+	}
+
+	// Get users with pagination
+	offset := (req.Page - 1) * req.Limit
+	query := fmt.Sprintf(`
+		SELECT id, email, first_name, last_name, phone, role, status, position,
+			   days_remaining, subscription_expires_at, package_type, max_departments, avatar_url,
+			   settings, last_login_at, created_at, updated_at
+		FROM %s.users %s
+		ORDER BY created_at DESC
+		LIMIT $%d OFFSET $%d`, r.schema, whereClause, argCount, argCount+1)
+
+	args = append(args, req.Limit, offset)
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to search users: %w", err)
+	}
+	defer rows.Close()
+
+	var users []*entities.User
+	for rows.Next() {
+		user := &entities.User{}
+		err := rows.Scan(
+			&user.ID, &user.Email, &user.FirstName, &user.LastName, &user.Phone,
+			&user.Role, &user.Status, &user.Position, &user.DaysRemaining,
+			&user.SubscriptionExpiresAt, &user.PackageType, &user.MaxDepartments,
+			&user.AvatarURL, &user.Settings, &user.LastLoginAt, &user.CreatedAt, &user.UpdatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan user: %w", err)
 		}
-		return nil, fmt.Errorf("failed to get organization by user: %w", err)
+		users = append(users, user)
 	}
 
-	return org, nil
+	totalPages := (total + req.Limit - 1) / req.Limit
+
+	return &repositories.SearchUsersResponse{
+		Users:      users,
+		Total:      total,
+		Page:       req.Page,
+		Limit:      req.Limit,
+		TotalPages: totalPages,
+	}, nil
 }
 
-// CreateSession creates a new user session
-func (r *PostgresUserRepository) CreateSession(ctx context.Context, session *UserSession) error {
+// GetUserStats returns user statistics
+func (r *PostgresUserRepository) GetUserStats(ctx context.Context) (*repositories.UserStatsResponse, error) {
 	query := fmt.Sprintf(`
-		INSERT INTO %s.user_sessions (id, user_id, token_hash, ip_address, user_agent, expires_at)
-		VALUES ($1, $2, $3, $4, $5, $6)`, r.schema)
+		SELECT 
+			COUNT(*) as total_users,
+			COUNT(CASE WHEN status = 'active' THEN 1 END) as active_users,
+			COUNT(CASE WHEN status != 'active' THEN 1 END) as inactive_users,
+			COUNT(CASE WHEN role = 'admin' THEN 1 END) as admin_count,
+			COUNT(CASE WHEN role = 'user' THEN 1 END) as user_count
+		FROM %s.users`, r.schema)
 
-	_, err := r.db.ExecContext(ctx, query,
-		session.ID, session.UserID, session.TokenHash, session.IPAddress, session.UserAgent, session.ExpiresAt,
+	var stats repositories.UserStatsResponse
+	err := r.db.QueryRowContext(ctx, query).Scan(
+		&stats.TotalUsers, &stats.ActiveUsers, &stats.InactiveUsers,
+		&stats.AdminCount, &stats.UserCount,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to create session: %w", err)
+		return nil, fmt.Errorf("failed to get user stats: %w", err)
 	}
 
-	return nil
-}
-
-// GetSessionByToken retrieves a session by token hash
-func (r *PostgresUserRepository) GetSessionByToken(ctx context.Context, tokenHash string) (*UserSession, error) {
-	query := fmt.Sprintf(`
-		SELECT id, user_id, token_hash, ip_address, user_agent, created_at, expires_at, revoked_at
-		FROM %s.user_sessions 
-		WHERE token_hash = $1 AND revoked_at IS NULL AND expires_at > NOW()`, r.schema)
-
-	session := &UserSession{}
-	err := r.db.QueryRowContext(ctx, query, tokenHash).Scan(
-		&session.ID, &session.UserID, &session.TokenHash, &session.IPAddress,
-		&session.UserAgent, &session.CreatedAt, &session.ExpiresAt, &session.RevokedAt,
-	)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("session not found or expired")
-		}
-		return nil, fmt.Errorf("failed to get session: %w", err)
-	}
-
-	return session, nil
-}
-
-// RevokeSession revokes a specific session
-func (r *PostgresUserRepository) RevokeSession(ctx context.Context, sessionID uuid.UUID) error {
-	query := fmt.Sprintf(`
-		UPDATE %s.user_sessions 
-		SET revoked_at = NOW() 
-		WHERE id = $1`, r.schema)
-
-	_, err := r.db.ExecContext(ctx, query, sessionID)
-	if err != nil {
-		return fmt.Errorf("failed to revoke session: %w", err)
-	}
-
-	return nil
-}
-
-// RevokeAllUserSessions revokes all sessions for a user
-func (r *PostgresUserRepository) RevokeAllUserSessions(ctx context.Context, userID uuid.UUID) error {
-	query := fmt.Sprintf(`
-		UPDATE %s.user_sessions 
-		SET revoked_at = NOW() 
-		WHERE user_id = $1 AND revoked_at IS NULL`, r.schema)
-
-	_, err := r.db.ExecContext(ctx, query, userID)
-	if err != nil {
-		return fmt.Errorf("failed to revoke all user sessions: %w", err)
-	}
-
-	return nil
-}
-
-// CleanExpiredSessions removes expired sessions
-func (r *PostgresUserRepository) CleanExpiredSessions(ctx context.Context) error {
-	query := fmt.Sprintf(`
-		DELETE FROM %s.user_sessions 
-		WHERE expires_at < NOW() OR revoked_at IS NOT NULL`, r.schema)
-
-	_, err := r.db.ExecContext(ctx, query)
-	if err != nil {
-		return fmt.Errorf("failed to clean expired sessions: %w", err)
-	}
-
-	return nil
+	return &stats, nil
 }
 
 // EmailExists checks if an email already exists
@@ -393,15 +338,102 @@ func (r *PostgresUserRepository) EmailExists(ctx context.Context, email string) 
 	return exists, nil
 }
 
-// EmployeeIDExists checks if an employee ID exists within an organization
-func (r *PostgresUserRepository) EmployeeIDExists(ctx context.Context, employeeID string, organizationID uuid.UUID) (bool, error) {
-	query := fmt.Sprintf(`SELECT EXISTS(SELECT 1 FROM %s.users WHERE employee_id = $1 AND organization_id = $2)`, r.schema)
-
-	var exists bool
-	err := r.db.QueryRowContext(ctx, query, employeeID, organizationID).Scan(&exists)
+// Email verification methods
+func (r *PostgresUserRepository) SendVerificationEmail(ctx context.Context, email string) error {
+	// Check if user exists
+	var userID string
+	query := fmt.Sprintf("SELECT id FROM %s.users WHERE email = $1", r.schema)
+	err := r.db.QueryRowContext(ctx, query, email).Scan(&userID)
 	if err != nil {
-		return false, fmt.Errorf("failed to check employee ID existence: %w", err)
+		return fmt.Errorf("user not found: %w", err)
 	}
 
-	return exists, nil
+	// Generate verification token (in real app, use crypto/rand)
+	token := fmt.Sprintf("verify_%s_%d", userID, time.Now().Unix())
+
+	// Store verification token in database
+	updateQuery := fmt.Sprintf(`
+		UPDATE %s.users 
+		SET email_verification_token = $1, 
+		    email_verification_expires_at = $2,
+		    updated_at = $3
+		WHERE id = $4
+	`, r.schema)
+
+	_, err = r.db.ExecContext(ctx, updateQuery, token, time.Now().Add(24*time.Hour), time.Now(), userID)
+
+	if err != nil {
+		return fmt.Errorf("failed to store verification token: %w", err)
+	}
+
+	// Send email via email service
+	emailService := services.NewSMTPEmailService()
+	err = emailService.SendVerificationEmail(email, token)
+	if err != nil {
+		return fmt.Errorf("failed to send verification email: %w", err)
+	}
+
+	return nil
+}
+
+func (r *PostgresUserRepository) VerifyEmail(ctx context.Context, token string) error {
+	// In a real implementation, this would:
+	// 1. Find the token in the database
+	// 2. Check if it's expired
+	// 3. Mark the user's email as verified
+	// 4. Remove the token
+
+	var userID string
+	var expiresAt time.Time
+
+	selectQuery := fmt.Sprintf(`
+		SELECT id, email_verification_expires_at 
+		FROM %s.users 
+		WHERE email_verification_token = $1
+	`, r.schema)
+
+	err := r.db.QueryRowContext(ctx, selectQuery, token).Scan(&userID, &expiresAt)
+
+	if err != nil {
+		return fmt.Errorf("invalid verification token: %w", err)
+	}
+
+	if time.Now().After(expiresAt) {
+		return fmt.Errorf("verification token expired")
+	}
+
+	// Mark email as verified
+	updateQuery := fmt.Sprintf(`
+		UPDATE %s.users 
+		SET email_verified = true,
+		    email_verification_token = NULL,
+		    email_verification_expires_at = NULL,
+		    updated_at = $1
+		WHERE id = $2
+	`, r.schema)
+
+	_, err = r.db.ExecContext(ctx, updateQuery, time.Now(), userID)
+
+	if err != nil {
+		return fmt.Errorf("failed to verify email: %w", err)
+	}
+
+	return nil
+}
+
+func (r *PostgresUserRepository) IsEmailVerified(ctx context.Context, email string) (bool, error) {
+	var verified bool
+	query := fmt.Sprintf(`
+		SELECT COALESCE(email_verified, false) 
+		FROM %s.users 
+		WHERE email = $1
+	`, r.schema)
+
+	err := r.db.QueryRowContext(ctx, query, email).Scan(&verified)
+
+	if err != nil {
+		return false, fmt.Errorf("failed to check email verification status: %w", err)
+	}
+
+	return verified, nil
 }

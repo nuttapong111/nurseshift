@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"nurseshift/department-service/internal/domain/entities"
+	"nurseshift/department-service/internal/infrastructure/database"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
@@ -13,59 +14,36 @@ import (
 // DepartmentHandler handles department-related HTTP requests
 type DepartmentHandler struct {
 	// departmentUseCase usecases.DepartmentUseCase
+	departmentRepo database.DepartmentRepository
 }
 
 // NewDepartmentHandler creates a new department handler
-func NewDepartmentHandler() *DepartmentHandler {
-	return &DepartmentHandler{}
+func NewDepartmentHandler(repo database.DepartmentRepository) *DepartmentHandler {
+	return &DepartmentHandler{
+		departmentRepo: repo,
+	}
 }
 
 // GetDepartments returns list of departments for the authenticated user
 func (h *DepartmentHandler) GetDepartments(c *fiber.Ctx) error {
 	userID := c.Locals("userID").(string)
 
-	// Mock data filtered by userID - only show departments created by this user
-	var departments []*entities.DepartmentWithStats
+	userUUID, err := uuid.Parse(userID)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "error",
+			"message": "รหัสผู้ใช้ไม่ถูกต้อง",
+		})
+	}
 
-	// Sample departments for different users
-	if userID == "user-1" {
-		departments = []*entities.DepartmentWithStats{
-			{
-				Department: &entities.Department{
-					ID:             uuid.New(),
-					OrganizationID: uuid.MustParse(userID), // Use userID as organizationID for demo
-					Name:           "แผนกผู้ป่วยใน",
-					Description:    stringPtr("แผนกดูแลผู้ป่วยที่ต้องพักรักษาตัวในโรงพยาบาล"),
-					MaxNurses:      15,
-					MaxAssistants:  8,
-					CreatedAt:      time.Now(),
-					UpdatedAt:      time.Now(),
-				},
-				TotalEmployees:  18,
-				ActiveEmployees: 16,
-				NurseCount:      12,
-				AssistantCount:  6,
-			},
-			{
-				Department: &entities.Department{
-					ID:             uuid.New(),
-					OrganizationID: uuid.MustParse(userID),
-					Name:           "แผนก ICU",
-					Description:    stringPtr("แผนกผู้ป่วยหนักที่ต้องการการดูแลเข้มข้น"),
-					MaxNurses:      12,
-					MaxAssistants:  6,
-					CreatedAt:      time.Now(),
-					UpdatedAt:      time.Now(),
-				},
-				TotalEmployees:  15,
-				ActiveEmployees: 14,
-				NurseCount:      10,
-				AssistantCount:  5,
-			},
-		}
-	} else {
-		// Return empty array for other users or different departments
-		departments = []*entities.DepartmentWithStats{}
+	// Get departments from database
+	departments, err := h.departmentRepo.GetWithStats(c.Context(), userUUID)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"status":  "error",
+			"message": "ไม่สามารถดึงข้อมูลแผนกได้",
+			"error":   err.Error(),
+		})
 	}
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
@@ -86,81 +64,13 @@ func (h *DepartmentHandler) GetDepartment(c *fiber.Ctx) error {
 		})
 	}
 
-	// Mock data for department detail
-	department := &entities.DepartmentDetail{
-		Department: &entities.Department{
-			ID:             departmentID,
-			OrganizationID: c.Locals("organizationID").(uuid.UUID),
-			Name:           "แผนกผู้ป่วยใน",
-			Description:    stringPtr("แผนกดูแลผู้ป่วยที่ต้องพักรักษาตัวในโรงพยาบาล"),
-			MaxNurses:      15,
-			MaxAssistants:  8,
-			CreatedAt:      time.Now().Add(-30 * 24 * time.Hour),
-			UpdatedAt:      time.Now(),
-		},
-		Head: &entities.User{
-			ID:         uuid.New(),
-			EmployeeID: "MGR001",
-			FirstName:  "ดร.สมชาย",
-			LastName:   "ใจดี",
-			Email:      "manager1@thephyathai.com",
-			Role:       "manager",
-			Status:     "active",
-			Position:   stringPtr("หัวหน้าแผนกผู้ป่วยใน"),
-		},
-		Employees: []*entities.EmployeeWithUser{
-			{
-				Employee: &entities.Employee{
-					ID:           uuid.New(),
-					DepartmentID: departmentID,
-					UserID:       uuid.New(),
-					Position:     "พยาบาลวิชาชีพ",
-					StartDate:    time.Now().Add(-180 * 24 * time.Hour),
-					IsActive:     true,
-					CreatedAt:    time.Now().Add(-180 * 24 * time.Hour),
-					UpdatedAt:    time.Now(),
-				},
-				User: &entities.User{
-					ID:         uuid.New(),
-					EmployeeID: "NUR001",
-					FirstName:  "สุภา",
-					LastName:   "จิตรดี",
-					Email:      "nurse1@thephyathai.com",
-					Role:       "nurse",
-					Status:     "active",
-					Position:   stringPtr("พยาบาลวิชาชีพ"),
-				},
-			},
-			{
-				Employee: &entities.Employee{
-					ID:           uuid.New(),
-					DepartmentID: departmentID,
-					UserID:       uuid.New(),
-					Position:     "ผู้ช่วยพยาบาล",
-					StartDate:    time.Now().Add(-120 * 24 * time.Hour),
-					IsActive:     true,
-					CreatedAt:    time.Now().Add(-120 * 24 * time.Hour),
-					UpdatedAt:    time.Now(),
-				},
-				User: &entities.User{
-					ID:         uuid.New(),
-					EmployeeID: "AST001",
-					FirstName:  "นิรันดร์",
-					LastName:   "ช่วยดี",
-					Email:      "assistant1@thephyathai.com",
-					Role:       "assistant",
-					Status:     "active",
-					Position:   stringPtr("ผู้ช่วยพยาบาล"),
-				},
-			},
-		},
-		Stats: &entities.DepartmentStats{
-			TotalEmployees:  18,
-			ActiveEmployees: 16,
-			NurseCount:      12,
-			AssistantCount:  6,
-			UtilizationRate: 88.9,
-		},
+	// Get department from database
+	department, err := h.departmentRepo.GetByID(c.Context(), departmentID)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"status":  "error",
+			"message": "ไม่พบแผนกที่ต้องการ",
+		})
 	}
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
@@ -174,13 +84,7 @@ func (h *DepartmentHandler) GetDepartment(c *fiber.Ctx) error {
 func (h *DepartmentHandler) CreateDepartment(c *fiber.Ctx) error {
 	userID := c.Locals("userID").(string)
 
-	var req struct {
-		Name          string     `json:"name" validate:"required"`
-		Description   *string    `json:"description"`
-		HeadUserID    *uuid.UUID `json:"headUserId"`
-		MaxNurses     int        `json:"maxNurses" validate:"required,min=1"`
-		MaxAssistants int        `json:"maxAssistants" validate:"required,min=1"`
-	}
+	var req entities.CreateDepartmentRequest
 
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
@@ -190,18 +94,36 @@ func (h *DepartmentHandler) CreateDepartment(c *fiber.Ctx) error {
 		})
 	}
 
-	// Mock response - use userID as organizationID for demo
-	userUUID, _ := uuid.Parse(userID)
+	userUUID, err := uuid.Parse(userID)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "error",
+			"message": "รหัสผู้ใช้ไม่ถูกต้อง",
+		})
+	}
+
+	// Create department entity
 	department := &entities.Department{
-		ID:             uuid.New(),
-		OrganizationID: userUUID,
-		Name:           req.Name,
-		Description:    req.Description,
-		HeadUserID:     req.HeadUserID,
-		MaxNurses:      req.MaxNurses,
-		MaxAssistants:  req.MaxAssistants,
-		CreatedAt:      time.Now(),
-		UpdatedAt:      time.Now(),
+		ID:            uuid.New(),
+		Name:          req.Name,
+		Description:   req.Description,
+		HeadUserID:    req.HeadUserID,
+		MaxNurses:     req.MaxNurses,
+		MaxAssistants: req.MaxAssistants,
+		Settings:      req.Settings,
+		IsActive:      true,
+		CreatedBy:     &userUUID,
+		CreatedAt:     time.Now(),
+		UpdatedAt:     time.Now(),
+	}
+
+	// Save to database
+	if err := h.departmentRepo.Create(c.Context(), department); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"status":  "error",
+			"message": "ไม่สามารถสร้างแผนกได้",
+			"error":   err.Error(),
+		})
 	}
 
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
@@ -222,12 +144,148 @@ func (h *DepartmentHandler) UpdateDepartment(c *fiber.Ctx) error {
 		})
 	}
 
+	var req entities.UpdateDepartmentRequest
+
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "error",
+			"message": "ข้อมูลที่ส่งมาไม่ถูกต้อง",
+			"error":   err.Error(),
+		})
+	}
+
+	// Get existing department
+	existingDept, err := h.departmentRepo.GetByID(c.Context(), departmentID)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"status":  "error",
+			"message": "ไม่พบแผนกที่ต้องการอัปเดต",
+		})
+	}
+
+	// Update fields
+	if req.Name != nil {
+		existingDept.Name = *req.Name
+	}
+	if req.Description != nil {
+		existingDept.Description = req.Description
+	}
+	if req.HeadUserID != nil {
+		existingDept.HeadUserID = req.HeadUserID
+	}
+	if req.MaxNurses != nil {
+		existingDept.MaxNurses = *req.MaxNurses
+	}
+	if req.MaxAssistants != nil {
+		existingDept.MaxAssistants = *req.MaxAssistants
+	}
+	if req.Settings != nil {
+		existingDept.Settings = req.Settings
+	}
+	if req.IsActive != nil {
+		existingDept.IsActive = *req.IsActive
+	}
+	existingDept.UpdatedAt = time.Now()
+
+	// Save to database
+	if err := h.departmentRepo.Update(c.Context(), existingDept); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"status":  "error",
+			"message": "ไม่สามารถอัปเดตแผนกได้",
+			"error":   err.Error(),
+		})
+	}
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"status":  "success",
+		"message": "อัปเดตแผนกสำเร็จ",
+		"data":    existingDept,
+	})
+}
+
+// DeleteDepartment deletes a department
+func (h *DepartmentHandler) DeleteDepartment(c *fiber.Ctx) error {
+	departmentIDStr := c.Params("id")
+	departmentID, err := uuid.Parse(departmentIDStr)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "error",
+			"message": "รหัสแผนกไม่ถูกต้อง",
+		})
+	}
+
+	// Soft delete from database
+	if err := h.departmentRepo.Delete(c.Context(), departmentID); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"status":  "error",
+			"message": "ไม่สามารถลบแผนกได้",
+			"error":   err.Error(),
+		})
+	}
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"status":  "success",
+		"message": "ลบแผนกสำเร็จ",
+	})
+}
+
+// GetDepartmentStaff returns staff in a department
+func (h *DepartmentHandler) GetDepartmentStaff(c *fiber.Ctx) error {
+	departmentIDStr := c.Params("id")
+	departmentID, err := uuid.Parse(departmentIDStr)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "error",
+			"message": "รหัสแผนกไม่ถูกต้อง",
+		})
+	}
+
+	// Get staff from database
+	staff, err := h.departmentRepo.GetStaff(c.Context(), departmentID)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"status":  "error",
+			"message": "ไม่สามารถดึงข้อมูลพนักงานได้",
+			"error":   err.Error(),
+		})
+	}
+
+	page, _ := strconv.Atoi(c.Query("page", "1"))
+	limit, _ := strconv.Atoi(c.Query("limit", "10"))
+
+	totalPages := (len(staff) + limit - 1) / limit
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"status":  "success",
+		"message": "ดึงข้อมูลพนักงานสำเร็จ",
+		"data": fiber.Map{
+			"staff":      staff,
+			"total":      len(staff),
+			"page":       page,
+			"limit":      limit,
+			"totalPages": totalPages,
+		},
+	})
+}
+
+// AddDepartmentStaff adds a new staff member to a department
+func (h *DepartmentHandler) AddDepartmentStaff(c *fiber.Ctx) error {
+	departmentIDStr := c.Params("id")
+	departmentID, err := uuid.Parse(departmentIDStr)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "error",
+			"message": "รหัสแผนกไม่ถูกต้อง",
+		})
+	}
+
 	var req struct {
-		Name          *string    `json:"name"`
-		Description   *string    `json:"description"`
-		HeadUserID    *uuid.UUID `json:"headUserId"`
-		MaxNurses     *int       `json:"maxNurses"`
-		MaxAssistants *int       `json:"maxAssistants"`
+		FirstName      string `json:"first_name" validate:"required"`
+		LastName       string `json:"last_name" validate:"required"`
+		Position       string `json:"position" validate:"required,oneof=nurse assistant"`
+		Phone          string `json:"phone,omitempty"`
+		Email          string `json:"email,omitempty"`
+		DepartmentRole string `json:"department_role" validate:"required,oneof=nurse assistant"`
 	}
 
 	if err := c.BodyParser(&req); err != nil {
@@ -238,47 +296,48 @@ func (h *DepartmentHandler) UpdateDepartment(c *fiber.Ctx) error {
 		})
 	}
 
-	// Mock response - in real implementation, update in database
-	department := &entities.Department{
-		ID:             departmentID,
-		OrganizationID: c.Locals("organizationID").(uuid.UUID),
-		Name:           getStringValue(req.Name, "แผนกที่อัปเดต"),
-		Description:    req.Description,
-		HeadUserID:     req.HeadUserID,
-		MaxNurses:      getIntValue(req.MaxNurses, 15),
-		MaxAssistants:  getIntValue(req.MaxAssistants, 8),
-		CreatedAt:      time.Now().Add(-30 * 24 * time.Hour),
-		UpdatedAt:      time.Now(),
-	}
-
-	return c.Status(fiber.StatusOK).JSON(fiber.Map{
-		"status":  "success",
-		"message": "อัปเดตแผนกสำเร็จ",
-		"data":    department,
-	})
-}
-
-// DeleteDepartment deletes a department
-func (h *DepartmentHandler) DeleteDepartment(c *fiber.Ctx) error {
-	departmentIDStr := c.Params("id")
-	_, err := uuid.Parse(departmentIDStr)
-	if err != nil {
+	// Validate position matches department_role
+	if req.Position != req.DepartmentRole {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"status":  "error",
-			"message": "รหัสแผนกไม่ถูกต้อง",
+			"message": "ตำแหน่งและ role ในแผนกต้องตรงกัน",
 		})
 	}
 
-	// Mock deletion - in real implementation, soft delete in database
-	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+	// Create staff member
+	staff := &entities.DepartmentStaff{
+		ID:           uuid.New(),
+		DepartmentID: departmentID,
+		Name:         req.FirstName + " " + req.LastName,
+		Position:     req.Position,
+		Phone:        &req.Phone,
+		Email:        &req.Email,
+		IsActive:     true,
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
+	}
+
+	// Save to database
+	if err := h.departmentRepo.CreateStaff(c.Context(), staff); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"status":  "error",
+			"message": "ไม่สามารถเพิ่มพนักงานได้",
+			"error":   err.Error(),
+		})
+	}
+
+	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
 		"status":  "success",
-		"message": "ลบแผนกสำเร็จ",
+		"message": "เพิ่มพนักงานสำเร็จ",
+		"data":    staff,
 	})
 }
 
-// GetDepartmentEmployees returns employees in a department
-func (h *DepartmentHandler) GetDepartmentEmployees(c *fiber.Ctx) error {
+// DeleteDepartmentStaff deletes a staff member from a department
+func (h *DepartmentHandler) DeleteDepartmentStaff(c *fiber.Ctx) error {
 	departmentIDStr := c.Params("id")
+	staffIDStr := c.Params("staffId")
+
 	departmentID, err := uuid.Parse(departmentIDStr)
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
@@ -287,108 +346,81 @@ func (h *DepartmentHandler) GetDepartmentEmployees(c *fiber.Ctx) error {
 		})
 	}
 
-	page, _ := strconv.Atoi(c.Query("page", "1"))
-	limit, _ := strconv.Atoi(c.Query("limit", "10"))
-
-	// Mock employees data
-	employees := []*entities.EmployeeWithUser{
-		{
-			Employee: &entities.Employee{
-				ID:           uuid.New(),
-				DepartmentID: departmentID,
-				UserID:       uuid.New(),
-				Position:     "พยาบาลวิชาชีพ",
-				StartDate:    time.Now().Add(-180 * 24 * time.Hour),
-				IsActive:     true,
-				CreatedAt:    time.Now().Add(-180 * 24 * time.Hour),
-				UpdatedAt:    time.Now(),
-			},
-			User: &entities.User{
-				ID:         uuid.New(),
-				EmployeeID: "NUR001",
-				FirstName:  "สุภา",
-				LastName:   "จิตรดี",
-				Email:      "nurse1@thephyathai.com",
-				Phone:      stringPtr("081-456-7890"),
-				Role:       "nurse",
-				Status:     "active",
-				Position:   stringPtr("พยาบาลวิชาชีพ"),
-			},
-		},
-		{
-			Employee: &entities.Employee{
-				ID:           uuid.New(),
-				DepartmentID: departmentID,
-				UserID:       uuid.New(),
-				Position:     "ผู้ช่วยพยาบาล",
-				StartDate:    time.Now().Add(-120 * 24 * time.Hour),
-				IsActive:     true,
-				CreatedAt:    time.Now().Add(-120 * 24 * time.Hour),
-				UpdatedAt:    time.Now(),
-			},
-			User: &entities.User{
-				ID:         uuid.New(),
-				EmployeeID: "AST001",
-				FirstName:  "นิรันดร์",
-				LastName:   "ช่วยดี",
-				Email:      "assistant1@thephyathai.com",
-				Phone:      stringPtr("081-789-0123"),
-				Role:       "assistant",
-				Status:     "active",
-				Position:   stringPtr("ผู้ช่วยพยาบาล"),
-			},
-		},
+	staffID, err := uuid.Parse(staffIDStr)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "error",
+			"message": "รหัสพนักงานไม่ถูกต้อง",
+		})
 	}
 
-	totalPages := (len(employees) + limit - 1) / limit
+	// Delete staff from database
+	if err := h.departmentRepo.DeleteStaff(c.Context(), staffID, departmentID); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"status":  "error",
+			"message": "ไม่สามารถลบพนักงานได้",
+			"error":   err.Error(),
+		})
+	}
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"status":  "success",
-		"message": "ดึงข้อมูลพนักงานสำเร็จ",
-		"data": fiber.Map{
-			"employees":  employees,
-			"total":      len(employees),
-			"page":       page,
-			"limit":      limit,
-			"totalPages": totalPages,
-		},
+		"message": "ลบพนักงานสำเร็จ",
 	})
 }
 
 // GetDepartmentStats returns department statistics
 func (h *DepartmentHandler) GetDepartmentStats(c *fiber.Ctx) error {
-	organizationID := c.Locals("organizationID").(uuid.UUID)
-	_ = organizationID
+	userID := c.Locals("userID").(string)
+
+	userUUID, err := uuid.Parse(userID)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "error",
+			"message": "รหัสผู้ใช้ไม่ถูกต้อง",
+		})
+	}
+
+	// Get departments with stats from database
+	departments, err := h.departmentRepo.GetWithStats(c.Context(), userUUID)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"status":  "error",
+			"message": "ไม่สามารถดึงสถิติแผนกได้",
+			"error":   err.Error(),
+		})
+	}
+
+	// Calculate totals
+	totalDepartments := len(departments)
+	totalEmployees := 0
+	var departmentStats []fiber.Map
+
+	for _, dept := range departments {
+		totalEmployees += dept.TotalEmployees
+
+		utilizationRate := 0.0
+		if dept.Department.MaxNurses > 0 || dept.Department.MaxAssistants > 0 {
+			maxTotal := dept.Department.MaxNurses + dept.Department.MaxAssistants
+			if maxTotal > 0 {
+				utilizationRate = float64(dept.TotalEmployees) / float64(maxTotal) * 100
+			}
+		}
+
+		departmentStats = append(departmentStats, fiber.Map{
+			"departmentName":  dept.Department.Name,
+			"totalEmployees":  dept.TotalEmployees,
+			"activeEmployees": dept.ActiveEmployees,
+			"nurseCount":      dept.NurseCount,
+			"assistantCount":  dept.AssistantCount,
+			"utilizationRate": utilizationRate,
+		})
+	}
 
 	stats := fiber.Map{
-		"totalDepartments": 3,
-		"totalEmployees":   55,
-		"departmentStats": []fiber.Map{
-			{
-				"departmentName":  "แผนกผู้ป่วยใน",
-				"totalEmployees":  18,
-				"activeEmployees": 16,
-				"nurseCount":      12,
-				"assistantCount":  6,
-				"utilizationRate": 88.9,
-			},
-			{
-				"departmentName":  "แผนก ICU",
-				"totalEmployees":  15,
-				"activeEmployees": 14,
-				"nurseCount":      10,
-				"assistantCount":  5,
-				"utilizationRate": 93.3,
-			},
-			{
-				"departmentName":  "แผนกฉุกเฉิน",
-				"totalEmployees":  22,
-				"activeEmployees": 20,
-				"nurseCount":      15,
-				"assistantCount":  7,
-				"utilizationRate": 90.9,
-			},
-		},
+		"totalDepartments": totalDepartments,
+		"totalEmployees":   totalEmployees,
+		"departmentStats":  departmentStats,
 	}
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
@@ -405,23 +437,4 @@ func (h *DepartmentHandler) Health(c *fiber.Ctx) error {
 		"service":   "department-service",
 		"timestamp": time.Now(),
 	})
-}
-
-// Helper functions
-func stringPtr(s string) *string {
-	return &s
-}
-
-func getStringValue(ptr *string, defaultValue string) string {
-	if ptr != nil {
-		return *ptr
-	}
-	return defaultValue
-}
-
-func getIntValue(ptr *int, defaultValue int) int {
-	if ptr != nil {
-		return *ptr
-	}
-	return defaultValue
 }

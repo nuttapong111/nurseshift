@@ -1,11 +1,9 @@
 package handlers
 
 import (
-	"strconv"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/google/uuid"
 )
 
 // PriorityHandler handles priority-related HTTP requests
@@ -37,16 +35,16 @@ type Priority struct {
 // Mock data
 var mockPriorities = []Priority{
 	{
-		ID:           "1",
-		UserID:       "user-1",
-		Name:         "วันที่ขอหยุด",
-		Description:  "ระบบจะหลีกเลี่ยงการจัดเวรในวันที่พนักงานขอหยุด",
-		Order:        1,
-		IsActive:     true,
-		HasSettings:  false,
-		Settings:     make(map[string]interface{}),
-		CreatedAt:    time.Now(),
-		UpdatedAt:    time.Now(),
+		ID:          "1",
+		UserID:      "user-1",
+		Name:        "วันที่ขอหยุด",
+		Description: "ระบบจะหลีกเลี่ยงการจัดเวรในวันที่พนักงานขอหยุด",
+		Order:       1,
+		IsActive:    true,
+		HasSettings: false,
+		Settings:    make(map[string]interface{}),
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
 	},
 	{
 		ID:           "2",
@@ -162,9 +160,9 @@ func (h *PriorityHandler) GetPriorities(c *fiber.Ctx) error {
 		"status":  "success",
 		"message": "ดึงข้อมูลความสำคัญสำเร็จ",
 		"data": fiber.Map{
-			"priorities":   userPriorities,
-			"total":        len(userPriorities),
-			"activeCount":  activeCount,
+			"priorities":  userPriorities,
+			"total":       len(userPriorities),
+			"activeCount": activeCount,
 		},
 	})
 }
@@ -343,7 +341,7 @@ func (h *PriorityHandler) Health(c *fiber.Ctx) error {
 // Helper function to reorder priorities for a user
 func (h *PriorityHandler) reorderPriorities(userID string) {
 	var userPriorities []int
-	
+
 	for i, priority := range mockPriorities {
 		if priority.UserID == userID {
 			userPriorities = append(userPriorities, i)

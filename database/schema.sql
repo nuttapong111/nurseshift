@@ -1,5 +1,6 @@
--- NurseShift Management System Database Schema
--- PostgreSQL 14+
+-- NurseShift Management System Database Schema (Updated)
+-- PostgreSQL 16.3+
+-- This schema reflects the current database structure
 
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
@@ -38,13 +39,17 @@ CREATE TABLE users (
     role user_role NOT NULL DEFAULT 'user',
     status user_status NOT NULL DEFAULT 'active',
     position VARCHAR(100),
-    days_remaining INTEGER DEFAULT 30, -- จำนวนวันใช้งานคงเหลือ
+    date_joined DATE NOT NULL DEFAULT CURRENT_DATE,
+    avatar_url VARCHAR(500),
+    last_login_at TIMESTAMP WITH TIME ZONE,
+    days_remaining INTEGER DEFAULT 30,
     subscription_expires_at TIMESTAMP WITH TIME ZONE,
     package_type package_type DEFAULT 'trial',
     max_departments INTEGER DEFAULT 2,
-    avatar_url VARCHAR(500),
     settings JSONB DEFAULT '{}',
-    last_login_at TIMESTAMP WITH TIME ZONE,
+    email_verified BOOLEAN DEFAULT false,
+    email_verification_token VARCHAR(255),
+    email_verification_expires_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -52,16 +57,26 @@ CREATE TABLE users (
 -- Departments (แผนกที่หัวหน้าพยาบาลสร้าง)
 CREATE TABLE departments (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE, -- หัวหน้าพยาบาลที่สร้างแผนก
-    name VARCHAR(255) NOT NULL,
+    name VARCHAR(255) NOT NULL UNIQUE,
     description TEXT,
+    head_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
     max_nurses INTEGER DEFAULT 10,
     max_assistants INTEGER DEFAULT 5,
     settings JSONB DEFAULT '{}',
     is_active BOOLEAN DEFAULT true,
+    created_by UUID REFERENCES users(id) ON DELETE SET NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    UNIQUE(user_id, name)
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Department Users (ความสัมพันธ์ระหว่าง users และ departments)
+CREATE TABLE department_users (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    department_id UUID NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    assigned_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    assigned_by UUID REFERENCES users(id),
+    UNIQUE(department_id, user_id)
 );
 
 -- Department Staff (พนักงานในแผนก)
@@ -126,7 +141,7 @@ CREATE TABLE holidays (
 CREATE TABLE schedules (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     department_id UUID NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
-    staff_id UUID NOT NULL REFERENCES department_staff(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     shift_id UUID NOT NULL REFERENCES shifts(id) ON DELETE CASCADE,
     schedule_date DATE NOT NULL,
     status VARCHAR(20) DEFAULT 'assigned',
@@ -135,26 +150,26 @@ CREATE TABLE schedules (
     assigned_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    UNIQUE(staff_id, schedule_date, shift_id) -- Prevent double-booking
+    UNIQUE(user_id, schedule_date, shift_id) -- Prevent double-booking
 );
 
 -- Leave Requests (หัวหน้าเวรกรอกวันที่พนักงานขอหยุดในแต่ละเดือน)
 CREATE TABLE leave_requests (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     department_id UUID NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
-    staff_id UUID NOT NULL REFERENCES department_staff(id) ON DELETE CASCADE,
+    leave_type leave_type NOT NULL,
     start_date DATE NOT NULL,
     end_date DATE NOT NULL,
-    leave_type leave_type NOT NULL,
     reason TEXT,
     status leave_status DEFAULT 'pending',
-    requested_by UUID NOT NULL REFERENCES users(id), -- หัวหน้าเวรที่กรอกข้อมูล
     approved_by UUID REFERENCES users(id),
     approved_at TIMESTAMP WITH TIME ZONE,
     rejection_reason TEXT,
-    notes TEXT, -- หมายเหตุเพิ่มเติม
+    attachments JSONB,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    CHECK (end_date >= start_date)
 );
 
 -- ===================================
@@ -164,7 +179,7 @@ CREATE TABLE leave_requests (
 -- Scheduling Priorities Configuration
 CREATE TABLE scheduling_priorities (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE, -- หัวหน้าพยาบาลที่สร้าง
+    department_id UUID NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
     description TEXT,
     priority_order INTEGER NOT NULL,
@@ -172,8 +187,8 @@ CREATE TABLE scheduling_priorities (
     config JSONB DEFAULT '{}', -- Stores priority-specific settings
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    UNIQUE(user_id, name),
-    UNIQUE(user_id, priority_order)
+    UNIQUE(department_id, name),
+    UNIQUE(department_id, priority_order)
 );
 
 -- ===================================
@@ -270,19 +285,22 @@ CREATE INDEX idx_users_email ON users(email);
 CREATE INDEX idx_users_role ON users(role);
 CREATE INDEX idx_users_status ON users(status);
 
-CREATE INDEX idx_departments_user_id ON departments(user_id);
+CREATE INDEX idx_departments_created_by ON departments(created_by);
+CREATE INDEX idx_departments_head_user_id ON departments(head_user_id);
+
+CREATE INDEX idx_department_users_department_id ON department_users(department_id);
+CREATE INDEX idx_department_users_user_id ON department_users(user_id);
 CREATE INDEX idx_department_staff_department_id ON department_staff(department_id);
 
 CREATE INDEX idx_schedules_department_id ON schedules(department_id);
-CREATE INDEX idx_schedules_staff_id ON schedules(staff_id);
+CREATE INDEX idx_schedules_user_id ON schedules(user_id);
 CREATE INDEX idx_schedules_date ON schedules(schedule_date);
 CREATE INDEX idx_schedules_shift_id ON schedules(shift_id);
 
-CREATE INDEX idx_leave_requests_staff_id ON leave_requests(staff_id);
+CREATE INDEX idx_leave_requests_user_id ON leave_requests(user_id);
 CREATE INDEX idx_leave_requests_department_id ON leave_requests(department_id);
 CREATE INDEX idx_leave_requests_status ON leave_requests(status);
 CREATE INDEX idx_leave_requests_dates ON leave_requests(start_date, end_date);
-CREATE INDEX idx_leave_requests_requested_by ON leave_requests(requested_by);
 
 CREATE INDEX idx_notifications_user_id ON notifications(user_id);
 CREATE INDEX idx_notifications_is_read ON notifications(is_read);
@@ -311,6 +329,8 @@ $$ language 'plpgsql';
 -- Apply updated_at triggers
 CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON users FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_departments_updated_at BEFORE UPDATE ON departments FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_department_users_updated_at BEFORE UPDATE ON department_users FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_department_staff_updated_at BEFORE UPDATE ON department_staff FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_shifts_updated_at BEFORE UPDATE ON shifts FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_schedules_updated_at BEFORE UPDATE ON schedules FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_leave_requests_updated_at BEFORE UPDATE ON leave_requests FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -352,4 +372,4 @@ INSERT INTO packages (name, type, price, duration_days, max_departments, feature
 ('แพ็คเกจมาตรฐาน', 'standard', 990.00, 30, 5, '["จัดการหลายแผนก", "พนักงานไม่จำกัด", "ตารางเวรอัตโนมัติ", "การแจ้งเตือนแบบเรียลไทม์", "รายงานและสถิติ"]', true),
 ('แพ็คเกจระดับองค์กร', 'enterprise', 2990.00, 90, 20, '["จัดการหลายแผนกไม่จำกัด", "พนักงานไม่จำกัด", "ตารางเวรอัตโนมัติด้วย AI", "การแจ้งเตือนแบบเรียลไทม์", "รายงานและสถิติขั้นสูง", "การสำรองข้อมูล", "การสนับสนุนลูกค้าแบบพิเศษ"]', false);
 
--- Default scheduling priorities will be inserted per user during setup
+-- Default scheduling priorities will be inserted per department during setup
