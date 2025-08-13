@@ -26,6 +26,7 @@ SERVICES=(
     "notification-service:8087"
     "package-service:8088"
     "payment-service:8089"
+    "employee-leave-service:8090"
 )
 
 # Function to check if port is available
@@ -60,6 +61,12 @@ start_service() {
     
     # Start the service in background
     cd "$service_dir"
+    
+    # Export environment variables from config.env if it exists
+    if [ -f "config.env" ]; then
+        echo -e "${CYAN}📋 Loading environment variables from config.env...${NC}"
+        export $(grep -v "^#" config.env | grep -v "^$" | xargs)
+    fi
     
     # Build and run the service
     if go mod tidy && go build -o "$service_name" cmd/server/main.go; then

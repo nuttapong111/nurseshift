@@ -160,7 +160,7 @@ CREATE TABLE schedules (
 -- Leave Requests (หัวหน้าเวรกรอกวันที่พนักงานขอหยุดในแต่ละเดือน)
 CREATE TABLE leave_requests (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    staff_id UUID NOT NULL REFERENCES department_staff(id) ON DELETE CASCADE,
     department_id UUID NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
     leave_type leave_type NOT NULL,
     start_date DATE NOT NULL,
@@ -325,7 +325,7 @@ CREATE INDEX idx_schedules_shift_id ON schedules(shift_id);
 CREATE INDEX idx_schedules_date ON schedules(schedule_date);
 
 -- Leave Requests indexes
-CREATE INDEX idx_leave_requests_user_id ON leave_requests(user_id);
+CREATE INDEX idx_leave_requests_user_id ON leave_requests(staff_id);
 CREATE INDEX idx_leave_requests_department_id ON leave_requests(department_id);
 CREATE INDEX idx_leave_requests_status ON leave_requests(status);
 CREATE INDEX idx_leave_requests_date_range ON leave_requests(start_date, end_date);

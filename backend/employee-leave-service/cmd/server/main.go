@@ -8,8 +8,11 @@ import (
 	"syscall"
 	"time"
 
-	"nurseshift/employee-leave-service/internal/infrastructure/config"
+	"nurseshift/employee-leave-service/internal/domain/usecases"
+	"nurseshift/employee-leave-service/internal/infrastructure/database"
+	"nurseshift/employee-leave-service/internal/infrastructure/repositories"
 	"nurseshift/employee-leave-service/internal/interfaces/http/handlers"
+	"nurseshift/employee-leave-service/internal/interfaces/http/routes"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
@@ -19,13 +22,30 @@ import (
 )
 
 func main() {
-	// Load configuration
-	cfg, err := config.Load()
+	// Load environment variables from config.env
+	log.Println("Loading environment variables...")
+
+	// Database connection
+	dbConn, err := database.NewConnection()
 	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
+		log.Fatalf("Failed to connect to database: %v", err)
+	}
+	defer dbConn.Close()
+
+	// Get schema from environment
+	schema := os.Getenv("DB_SCHEMA")
+	if schema == "" {
+		schema = "nurse_shift"
 	}
 
-	fmt.Printf("Starting Employee Leave Service on port %s...\n", cfg.Server.Port)
+	// Initialize repository
+	leaveRepo := repositories.NewPostgresLeaveRepository(dbConn.GetDB(), schema)
+
+	// Initialize use case
+	leaveUseCase := usecases.NewLeaveUseCase(leaveRepo)
+
+	// Initialize handler
+	leaveHandler := handlers.NewLeaveHandler(leaveUseCase)
 
 	// Create Fiber app
 	app := fiber.New(fiber.Config{
@@ -45,33 +65,25 @@ func main() {
 		AllowCredentials: true,
 	}))
 
-	if cfg.IsDevelopment() {
+	if os.Getenv("ENV") == "development" {
 		app.Use(logger.New())
 	}
 
-	// Initialize handlers
-	leaveHandler := handlers.NewEmployeeLeaveHandler()
+	// Setup routes
+	routes.SetupRoutes(app, leaveHandler)
 
-	// Routes
-	api := app.Group("/api/v1")
-	leaves := api.Group("/employee-leaves")
-	{
-		leaves.Get("/", leaveHandler.GetEmployeeLeaves)
-		leaves.Post("/", leaveHandler.CreateEmployeeLeave)
-		leaves.Get("/departments/:departmentId", leaveHandler.GetLeavesByDepartment)
-		leaves.Get("/employees/:employeeId", leaveHandler.GetLeavesByEmployee)
-		leaves.Put("/:id", leaveHandler.UpdateEmployeeLeave)
-		leaves.Delete("/:id", leaveHandler.DeleteEmployeeLeave)
-		leaves.Put("/:id/toggle", leaveHandler.ToggleEmployeeLeave)
+	// Get port from environment
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8088"
 	}
 
-	// Health check
-	app.Get("/health", leaveHandler.Health)
+	fmt.Printf("Starting Employee Leave Service on port %s...\n", port)
 
 	// Start server
 	go func() {
-		fmt.Printf("🚀 Employee Leave Service running on http://localhost:%s\n", cfg.Server.Port)
-		if err := app.Listen(":" + cfg.Server.Port); err != nil {
+		fmt.Printf("🚀 Employee Leave Service running on http://localhost:%s\n", port)
+		if err := app.Listen(":" + port); err != nil {
 			log.Printf("Failed to start server: %v", err)
 		}
 	}()

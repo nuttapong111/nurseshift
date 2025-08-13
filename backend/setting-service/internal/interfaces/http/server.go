@@ -3,10 +3,6 @@ package http
 import (
 	"time"
 
-	"nurseshift/auth-service/internal/domain/usecases"
-	"nurseshift/auth-service/internal/infrastructure/config"
-	"nurseshift/auth-service/internal/interfaces/http/routes"
-
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/helmet"
@@ -16,19 +12,16 @@ import (
 )
 
 // Server represents the HTTP server
-type Server struct {
-	app    *fiber.App
-	config *config.Config
-}
+type Server struct{ app *fiber.App }
 
 // NewServer creates a new HTTP server
-func NewServer(cfg *config.Config, authUseCase usecases.AuthUseCase, jwtService usecases.JWTService) *Server {
+func NewServer() *Server {
 	app := fiber.New(fiber.Config{
 		AppName:           "NurseShift Auth Service",
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,
 		IdleTimeout:       30 * time.Second,
-		EnablePrintRoutes: cfg.IsDevelopment(),
+		EnablePrintRoutes: true,
 		ErrorHandler:      errorHandler,
 	})
 
@@ -38,23 +31,14 @@ func NewServer(cfg *config.Config, authUseCase usecases.AuthUseCase, jwtService 
 	app.Use(helmet.New())
 
 	// CORS middleware
-	app.Use(cors.New(cors.Config{
-		AllowOrigins:     joinStrings(cfg.CORS.Origins),
-		AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS",
-		AllowHeaders:     "Origin,Content-Type,Accept,Authorization,X-Requested-With,X-Session-ID",
-		AllowCredentials: cfg.CORS.Credentials,
-		MaxAge:           86400, // 24 hours
-	}))
+	app.Use(cors.New(cors.Config{AllowOrigins: "*", AllowMethods: "GET,POST,PUT,DELETE,OPTIONS", AllowHeaders: "Origin,Content-Type,Accept,Authorization"}))
 
 	// Logger middleware (only in development)
-	if cfg.IsDevelopment() {
+	{
 		app.Use(logger.New(logger.Config{
 			Format: "[${time}] ${status} - ${method} ${path} (${latency})\n",
 		}))
 	}
-
-	// Routes
-	routes.SetupAuthRoutes(app, authUseCase, jwtService)
 
 	// Global health check
 	app.Get("/health", func(c *fiber.Ctx) error {
@@ -74,16 +58,11 @@ func NewServer(cfg *config.Config, authUseCase usecases.AuthUseCase, jwtService 
 		})
 	})
 
-	return &Server{
-		app:    app,
-		config: cfg,
-	}
+	return &Server{app: app}
 }
 
 // Start starts the HTTP server
-func (s *Server) Start() error {
-	return s.app.Listen(":" + s.config.Server.Port)
-}
+func (s *Server) Start(port string) error { return s.app.Listen(":" + port) }
 
 // Shutdown gracefully shuts down the server
 func (s *Server) Shutdown() error {
@@ -117,7 +96,6 @@ func joinStrings(strs []string) string {
 	if len(strs) == 0 {
 		return ""
 	}
-
 	result := strs[0]
 	for i := 1; i < len(strs); i++ {
 		result += "," + strs[i]

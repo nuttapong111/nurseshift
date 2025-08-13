@@ -8,8 +8,14 @@ import (
 	"syscall"
 	"time"
 
+	"database/sql"
+	usecase "nurseshift/setting-service/internal/domain/usecases"
 	"nurseshift/setting-service/internal/infrastructure/config"
+	repoimpl "nurseshift/setting-service/internal/infrastructure/repositories"
 	"nurseshift/setting-service/internal/interfaces/http/handlers"
+	settingroutes "nurseshift/setting-service/internal/interfaces/http/routes"
+
+	_ "github.com/lib/pq"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
@@ -49,16 +55,21 @@ func main() {
 		app.Use(logger.New())
 	}
 
-	// Initialize handlers
-	settingHandler := handlers.NewSettingHandler()
+	// Initialize repository/usecase (DB connection via DSN in config of auth-service reused here)
+	dsn := cfg.GetDatabaseDSN()
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		log.Fatalf("DB open error: %v", err)
+	}
+	if err := db.Ping(); err != nil {
+		log.Fatalf("DB ping error: %v", err)
+	}
+	repo := repoimpl.NewPostgresSettingRepository(db, cfg.Database.Schema)
+	uc := usecase.NewSettingUseCase(repo)
+	settingHandler := handlers.NewSettingHandler(uc)
 
 	// Routes
-	api := app.Group("/api/v1")
-	settings := api.Group("/settings")
-	{
-		settings.Get("/", settingHandler.GetSettings)
-		settings.Put("/", settingHandler.UpdateSettings)
-	}
+	settingroutes.SetupRoutes(app, settingHandler)
 
 	// Health check
 	app.Get("/health", settingHandler.Health)

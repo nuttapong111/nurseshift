@@ -200,22 +200,25 @@ func (uc *AuthUseCaseImpl) Register(ctx context.Context, req *RegisterRequest) (
 
 	// Create user with default values
 	now := time.Now()
+	trialExpiresAt := now.AddDate(0, 0, 30) // 30 days trial period
+
 	user := &entities.User{
-		ID:             uuid.New(),
-		Email:          req.Email,
-		PasswordHash:   hashedPassword,
-		FirstName:      req.FirstName,
-		LastName:       req.LastName,
-		Phone:          req.Phone,
-		Role:           entities.RoleUser, // Default to user role
-		Status:         entities.StatusActive,
-		Position:       req.Position,
-		DaysRemaining:  30, // Default trial period
-		PackageType:    "trial",
-		MaxDepartments: 2,
-		Settings:       "{}",
-		CreatedAt:      now,
-		UpdatedAt:      now,
+		ID:                    uuid.New(),
+		Email:                 req.Email,
+		PasswordHash:          hashedPassword,
+		FirstName:             req.FirstName,
+		LastName:              req.LastName,
+		Phone:                 req.Phone,
+		Role:                  entities.RoleUser, // Default to user role
+		Status:                entities.StatusActive,
+		Position:              req.Position,
+		DaysRemaining:         30,              // Default trial period
+		SubscriptionExpiresAt: &trialExpiresAt, // Set trial expiration date
+		PackageType:           "trial",
+		MaxDepartments:        2,
+		Settings:              "{}",
+		CreatedAt:             now,
+		UpdatedAt:             now,
 	}
 
 	err = uc.userRepo.Create(ctx, user)
@@ -407,7 +410,7 @@ func (uc *AuthUseCaseImpl) GetUserByEmail(ctx context.Context, email string) (*U
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return uc.mapUserToResponse(user), nil
 }
 
