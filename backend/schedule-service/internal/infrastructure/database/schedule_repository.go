@@ -181,7 +181,9 @@ func (r *ScheduleRepository) ListWorkingDays(ctx context.Context, departmentID s
 		return nil, err
 	}
 	defer rows.Close()
-	res := map[int]bool{0: true, 1: true, 2: true, 3: true, 4: true, 5: true, 6: true}
+	// Default working policy: Monday-Friday = working, Saturday-Sunday = not working
+	// หากตาราง working_days ว่าง ค่าเริ่มต้นนี้จะช่วยไม่ให้จัดเวรทุกวันทั้งเดือนโดยไม่ตั้งใจ
+	res := map[int]bool{0: false, 1: true, 2: true, 3: true, 4: true, 5: true, 6: false}
 	for rows.Next() {
 		var d int
 		var w bool
