@@ -3,7 +3,12 @@ package database
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/url"
+	"os"
+	"time"
 )
 
 type ScheduleRecord struct {
@@ -181,18 +186,65 @@ func (r *ScheduleRepository) ListWorkingDays(ctx context.Context, departmentID s
 		return nil, err
 	}
 	defer rows.Close()
-	// Default working policy: Monday-Friday = working, Saturday-Sunday = not working
-	// หากตาราง working_days ว่าง ค่าเริ่มต้นนี้จะช่วยไม่ให้จัดเวรทุกวันทั้งเดือนโดยไม่ตั้งใจ
-	res := map[int]bool{0: false, 1: true, 2: true, 3: true, 4: true, 5: true, 6: false}
+
+	// Strategy:
+	// - หากยังไม่เคยตั้งค่าเลย (ไม่มีเรคคอร์ด) ให้ค่าเริ่มต้นเป็น "ทำงานทุกวัน"
+	// - หากมีการตั้งค่าบางวันแล้ว ให้ถือว่าเป็นโหมดกำหนดเอง: วันใดที่ไม่ได้ระบุ ให้เป็น "ไม่ทำงาน" โดยปริยาย
+	//   เพื่อหลีกเลี่ยงเคสที่ระบุเฉพาะ จ-ศ แล้ว ส-อา ไม่มีเรคคอร์ดแต่ถูกนับเป็นวันทำงาน
+	tmp := map[int]bool{}
+	hasAnyRow := false
 	for rows.Next() {
 		var d int
 		var w bool
 		if err := rows.Scan(&d, &w); err != nil {
 			return nil, err
 		}
-		res[d] = w
+		tmp[d] = w
+		hasAnyRow = true
 	}
-	return res, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	res := map[int]bool{}
+	if !hasAnyRow {
+		// Try to fetch from setting-service as a fallback
+		serviceURL := os.Getenv("SETTING_SERVICE_URL")
+		if serviceURL == "" {
+			serviceURL = "http://localhost:8085"
+		}
+		reqURL := fmt.Sprintf("%s/api/v1/settings?departmentId=%s", serviceURL, url.QueryEscape(departmentID))
+		httpClient := &http.Client{Timeout: 2 * time.Second}
+		if resp, err := httpClient.Get(reqURL); err == nil && resp != nil && resp.StatusCode < 300 {
+			defer resp.Body.Close()
+			var payload struct {
+				Data struct {
+					WorkingDays []struct {
+						DayOfWeek    int  `json:"dayOfWeek"`
+						IsWorkingDay bool `json:"isWorkingDay"`
+					} `json:"workingDays"`
+				} `json:"data"`
+			}
+			if err := json.NewDecoder(resp.Body).Decode(&payload); err == nil && len(payload.Data.WorkingDays) > 0 {
+				// custom mode → unspecified days = not working by default
+				res = map[int]bool{0: false, 1: false, 2: false, 3: false, 4: false, 5: false, 6: false}
+				for _, w := range payload.Data.WorkingDays {
+					if w.DayOfWeek >= 0 && w.DayOfWeek <= 6 {
+						res[w.DayOfWeek] = w.IsWorkingDay
+					}
+				}
+				return res, nil
+			}
+		}
+		// fallback ultimate: working everyday
+		res = map[int]bool{0: true, 1: true, 2: true, 3: true, 4: true, 5: true, 6: true}
+	} else {
+		// custom mode → unspecified days = not working by default
+		res = map[int]bool{0: false, 1: false, 2: false, 3: false, 4: false, 5: false, 6: false}
+		for d, w := range tmp {
+			res[d] = w
+		}
+	}
+	return res, nil
 }
 
 type Holiday struct {

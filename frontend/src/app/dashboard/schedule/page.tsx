@@ -352,17 +352,19 @@ export default function SchedulePage() {
     shiftTypes.forEach(st => { shiftIdToName[st.id] = st.name })
     const shiftIds = Object.keys(shiftIdToName)
 
-    type Row = { name: string; position: 'พยาบาล'|'ผู้ช่วยพยาบาล'; perShift: Record<string, number>; total: number }
+    // aggregate by staffId (ไม่ใช้ชื่อ เพื่อเลี่ยงปัญหาชื่อซ้ำข้ามตำแหน่ง)
+    type Row = { staffId: string; name: string; position: 'พยาบาล'|'ผู้ช่วยพยาบาล'; perShift: Record<string, number>; total: number }
     const map: Record<string, Row> = {}
-    rawAssignments.forEach((a: any) => {
-      const name = a.userName || '-'
-      const role = a.departmentRole === 'assistant' ? 'ผู้ช่วยพยาบาล' : 'พยาบาล'
-      if (!map[name]) map[name] = { name, position: role, perShift: {}, total: 0 }
-      map[name].perShift[a.shiftId] = (map[name].perShift[a.shiftId] || 0) + 1
-      map[name].total++
+    ;(rawAssignments as any[]).forEach((a: any) => {
+      const staffId = a.staffId || a.userId || `${a.userName}|${a.departmentRole}`
+      const name = a.staffName || a.userName || '-'
+      const role = a.staffRole ? (a.staffRole.includes('ช่วย') || a.staffRole === 'assistant' ? 'ผู้ช่วยพยาบาล' : 'พยาบาล')
+                               : (a.departmentRole === 'assistant' ? 'ผู้ช่วยพยาบาล' : 'พยาบาล')
+      if (!map[staffId]) map[staffId] = { staffId, name, position: role, perShift: {}, total: 0 }
+      map[staffId].perShift[a.shiftId] = (map[staffId].perShift[a.shiftId] || 0) + 1
+      map[staffId].total++
     })
 
-    // transform rows to include all shift columns
     const rows = Object.values(map).map(r => {
       shiftIds.forEach(sid => { if (!(sid in r.perShift)) r.perShift[sid] = 0 })
       return r

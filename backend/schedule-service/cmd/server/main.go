@@ -81,7 +81,8 @@ func main() {
 
 	// Auto-generate routes
 	apiAuth := api.Group("/schedules").Use(middleware.AuthMiddleware(""))
-	apiAuth.Post("/auto-generate", scheduleHandler.AutoGenerate)
+	// Route compatibility: point auto-generate to the new optimizer logic
+	apiAuth.Post("/auto-generate", scheduleHandler.OptimizeGenerate)
 	apiAuth.Post("/ai-generate", scheduleHandler.AIGenerate)
 
 	// Calendar meta (working/holiday)

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -357,18 +358,106 @@ func (h *ScheduleHandler) AutoGenerate(c *fiber.Ctx) error {
 	assignmentCount := map[string]int{}
 	lastAssignedDate := map[string]time.Time{}
 
-	pick := func(cands []string, date time.Time, sameDay map[string]bool) (string, bool) {
+	// Track assigned time intervals per staff per date to allow multiple non-overlapping shifts
+	// intervals are in minutes from 00:00 of the day; end may exceed 1440 for overnight shifts
+	assignedIntervals := map[string]map[string][][2]int{}
+
+	// helpers for time/intervals
+	parseHM := func(hm string) (int, bool) {
+		// hm format HH:MM
+		if len(hm) < 4 {
+			return 0, false
+		}
+		var hh, mm int
+		if _, err := fmt.Sscanf(hm, "%d:%d", &hh, &mm); err != nil {
+			return 0, false
+		}
+		return hh*60 + mm, true
+	}
+	shiftInterval := func(sh database.ShiftRecord) (int, int, bool) {
+		start, ok1 := parseHM(sh.StartTime)
+		end, ok2 := parseHM(sh.EndTime)
+		if !ok1 || !ok2 {
+			return 0, 0, false
+		}
+		if end <= start { // overnight or 00:00 next day
+			end += 24 * 60
+		}
+		return start, end, true
+	}
+	overlaps := func(aStart, aEnd, bStart, bEnd int) bool {
+		return aStart < bEnd && bStart < aEnd
+	}
+	mergeAndMaxContiguous := func(ivals [][2]int) int {
+		if len(ivals) == 0 {
+			return 0
+		}
+		sort.Slice(ivals, func(i, j int) bool { return ivals[i][0] < ivals[j][0] })
+		curS, curE := ivals[0][0], ivals[0][1]
+		maxDur := curE - curS
+		for i := 1; i < len(ivals); i++ {
+			s, e := ivals[i][0], ivals[i][1]
+			if s <= curE { // overlap or touch → contiguous
+				if e > curE {
+					curE = e
+				}
+			} else { // gap → new block
+				if curE-curS > maxDur {
+					maxDur = curE - curS
+				}
+				curS, curE = s, e
+			}
+		}
+		if curE-curS > maxDur {
+			maxDur = curE - curS
+		}
+		return maxDur
+	}
+	// read max contiguous-hours policy (default 16h)
+	maxContiguousHours := 16
+	if v, err := h.repo.GetPriorityValue(c.Context(), req.DepartmentID, "ชั่วโมงติดต่อกันสูงสุด"); err == nil && v.Valid {
+		if v.Int64 > 0 && v.Int64 <= 24 {
+			maxContiguousHours = int(v.Int64)
+		}
+	}
+	maxContiguousMinutes := maxContiguousHours * 60
+
+	canAssignShift := func(staffID string, d time.Time, sh database.ShiftRecord) bool {
+		start, end, ok := shiftInterval(sh)
+		if !ok {
+			return false
+		}
+		dateStr := d.Format("2006-01-02")
+		if assignedIntervals[staffID] == nil {
+			assignedIntervals[staffID] = map[string][][2]int{}
+		}
+		existing := assignedIntervals[staffID][dateStr]
+		for _, iv := range existing {
+			if overlaps(iv[0], iv[1], start, end) {
+				return false // overlap not allowed
+			}
+		}
+		// check contiguous hours after adding this shift
+		merged := append(append([][2]int{}, existing...), [2]int{start, end})
+		if mergeAndMaxContiguous(merged) > maxContiguousMinutes {
+			return false
+		}
+		return true
+	}
+
+	pick := func(cands []string, date time.Time, sh database.ShiftRecord) (string, bool) {
 		best := ""
 		ok := false
 		bestCnt := int(^uint(0) >> 1)
 		for _, uid := range cands {
-			if sameDay[uid] {
-				continue
-			}
 			if d, exists := lastAssignedDate[uid]; exists {
 				if d.AddDate(0, 0, 1).Equal(date) {
 					continue
 				} // no consecutive day
+			}
+			// per-day non-overlap and max contiguous-hours
+			if !canAssignShift(uid, date, sh) {
+				continue
 			}
 			// leave check is applied later when picking candidate
 			cnt := assignmentCount[uid]
@@ -414,26 +503,36 @@ func (h *ScheduleHandler) AutoGenerate(c *fiber.Ctx) error {
 		if isHoliday(d) {
 			continue
 		}
-		sameDay := map[string]bool{}
 		for _, sh := range shifts {
 			// nurses
 			for i := 0; i < sh.RequiredNurse && len(nurses) > 0; i++ {
-				sid, ok := pick(nurses, d, sameDay)
+				sid, ok := pick(nurses, d, sh)
 				if ok && !isOnLeave(sid, d) {
 					items = append(items, database.Assignment{ID: uuid.New().String(), DepartmentID: req.DepartmentID, StaffID: sid, ShiftID: sh.ID, ScheduleDate: dateStr, Status: "assigned"})
 					assignmentCount[sid]++
 					lastAssignedDate[sid] = d
-					sameDay[sid] = true
+					// record interval for this day
+					if assignedIntervals[sid] == nil {
+						assignedIntervals[sid] = map[string][][2]int{}
+					}
+					if s, e, ok := shiftInterval(sh); ok {
+						assignedIntervals[sid][dateStr] = append(assignedIntervals[sid][dateStr], [2]int{s, e})
+					}
 				}
 			}
 			// assistants
 			for i := 0; i < sh.RequiredAsst && len(assistants) > 0; i++ {
-				sid, ok := pick(assistants, d, sameDay)
+				sid, ok := pick(assistants, d, sh)
 				if ok && !isOnLeave(sid, d) {
 					items = append(items, database.Assignment{ID: uuid.New().String(), DepartmentID: req.DepartmentID, StaffID: sid, ShiftID: sh.ID, ScheduleDate: dateStr, Status: "assigned"})
 					assignmentCount[sid]++
 					lastAssignedDate[sid] = d
-					sameDay[sid] = true
+					if assignedIntervals[sid] == nil {
+						assignedIntervals[sid] = map[string][][2]int{}
+					}
+					if s, e, ok := shiftInterval(sh); ok {
+						assignedIntervals[sid][dateStr] = append(assignedIntervals[sid][dateStr], [2]int{s, e})
+					}
 				}
 			}
 		}
