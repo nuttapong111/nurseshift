@@ -78,7 +78,7 @@ func SolveMonth(in Input) ([]database.Assignment, error) {
 	}
 	dlog("inputs: nurses=%d assistants=%d shifts=%d month=%s", len(nurseIDs), len(assistantIDs), len(in.Shifts), in.Month)
 
-	// Targets per role
+    // Targets per role (รวมทุกประเภทเวร)
 	countRoleSlots := func(role string) int {
 		total := 0
 		for day := 1; day <= days; day++ {
@@ -116,9 +116,34 @@ func SolveMonth(in Input) ([]database.Assignment, error) {
 		"assistant": ceilDiv(countRoleSlots("assistant"), max(len(assistantIDs), 1)),
 	}
 
+    // Targets per role per shift type (กระจายต่อประเภทเวร)
+    countRoleShiftSlots := func(role, shiftID string) int {
+        total := 0
+        for day := 1; day <= days; day++ {
+            d := time.Date(year, m, day, 0, 0, 0, 0, time.UTC)
+            if w, ok := in.WorkingDays[int(d.Weekday())]; ok && !w { continue }
+            if isHoliday(d) { continue }
+            for _, sh := range in.Shifts {
+                if sh.ID != shiftID { continue }
+                if role == "assistant" {
+                    total += sh.RequiredAsst
+                } else {
+                    total += sh.RequiredNurse
+                }
+            }
+        }
+        return total
+    }
+    roleShiftTarget := map[string]map[string]int{"nurse": {}, "assistant": {}}
+    for _, sh := range in.Shifts {
+        roleShiftTarget["nurse"][sh.ID] = ceilDiv(countRoleShiftSlots("nurse", sh.ID), max(len(nurseIDs), 1))
+        roleShiftTarget["assistant"][sh.ID] = ceilDiv(countRoleShiftSlots("assistant", sh.ID), max(len(assistantIDs), 1))
+    }
+
 	// State trackers
 	assignments := []database.Assignment{}
-	count := map[string]int{}
+    count := map[string]int{}
+    countByShift := map[string]map[string]int{} // staffID -> shiftID -> count
 	lastDay := map[string]int{}
 	// allow multiple non-overlapping shifts/day with max contiguous-hour limit
 	assignedIntervals := map[string]map[string][][2]int{} // staffID -> date -> list of [start,end] minutes
@@ -225,14 +250,24 @@ func SolveMonth(in Input) ([]database.Assignment, error) {
 		}
 		return "unknown"
 	}
-	cost := func(role, staffID string) int {
-		t := roleTarget[role]
-		diff := count[staffID] - t
-		if diff <= 0 { // under target preferred
-			return (diff) * 5 // negative or zero; greedy picks minimum
-		}
-		return diff * diff * 10 // square penalty
-	}
+    penalty := func(diff int) int {
+        if diff <= 0 {
+            return diff * 5
+        }
+        return diff * diff * 10
+    }
+    cost := func(role, staffID, shiftID string) int {
+        totalTarget := roleTarget[role]
+        totalDiff := count[staffID] - totalTarget
+        // per-shift target/diff
+        st := roleShiftTarget[role][shiftID]
+        if countByShift[staffID] == nil {
+            countByShift[staffID] = map[string]int{}
+        }
+        perShiftDiff := countByShift[staffID][shiftID] - st
+        // weight per-shift balancing a bit stronger
+        return penalty(totalDiff) + 3*penalty(perShiftDiff)
+    }
 
 	// Seed pass: assure at least 1 shift for everyone if capacity allows
 	type needNA struct{ n, a int }
@@ -282,8 +317,10 @@ func SolveMonth(in Input) ([]database.Assignment, error) {
 						dlog("seed: block %s %s shift=%s reason=%s", staffName[id], dateStr, sh.Name, reason(id, dateStr, d, sh))
 						continue
 					}
-					assignments = append(assignments, database.Assignment{ID: RandID(), DepartmentID: in.DepartmentID, StaffID: id, ShiftID: sh.ID, ScheduleDate: dateStr, Status: "assigned"})
-					count[id]++
+                    assignments = append(assignments, database.Assignment{ID: RandID(), DepartmentID: in.DepartmentID, StaffID: id, ShiftID: sh.ID, ScheduleDate: dateStr, Status: "assigned"})
+                    count[id]++
+                    if countByShift[id] == nil { countByShift[id] = map[string]int{} }
+                    countByShift[id][sh.ID]++
 					lastDay[id] = day
 					if assignedIntervals[id] == nil {
 						assignedIntervals[id] = map[string][][2]int{}
@@ -328,11 +365,11 @@ func SolveMonth(in Input) ([]database.Assignment, error) {
 			for need > 0 {
 				best := ""
 				bestCost := 1 << 30
-				for _, id := range nurseIDs {
+                for _, id := range nurseIDs {
 					if !isEligible(id, dateStr, d, sh) {
 						continue
 					}
-					c := cost("nurse", id)
+                    c := cost("nurse", id, sh.ID)
 					if c < bestCost {
 						bestCost = c
 						best = id
@@ -342,7 +379,9 @@ func SolveMonth(in Input) ([]database.Assignment, error) {
 					break
 				}
 				assignments = append(assignments, database.Assignment{ID: RandID(), DepartmentID: in.DepartmentID, StaffID: best, ShiftID: sh.ID, ScheduleDate: dateStr, Status: "assigned"})
-				count[best]++
+                count[best]++
+                if countByShift[best] == nil { countByShift[best] = map[string]int{} }
+                countByShift[best][sh.ID]++
 				lastDay[best] = day
 				if assignedIntervals[best] == nil {
 					assignedIntervals[best] = map[string][][2]int{}
@@ -363,11 +402,11 @@ func SolveMonth(in Input) ([]database.Assignment, error) {
 			for needA > 0 {
 				best := ""
 				bestCost := 1 << 30
-				for _, id := range assistantIDs {
+                for _, id := range assistantIDs {
 					if !isEligible(id, dateStr, d, sh) {
 						continue
 					}
-					c := cost("assistant", id)
+                    c := cost("assistant", id, sh.ID)
 					if c < bestCost {
 						bestCost = c
 						best = id
@@ -377,7 +416,9 @@ func SolveMonth(in Input) ([]database.Assignment, error) {
 					break
 				}
 				assignments = append(assignments, database.Assignment{ID: RandID(), DepartmentID: in.DepartmentID, StaffID: best, ShiftID: sh.ID, ScheduleDate: dateStr, Status: "assigned"})
-				count[best]++
+                count[best]++
+                if countByShift[best] == nil { countByShift[best] = map[string]int{} }
+                countByShift[best][sh.ID]++
 				lastDay[best] = day
 				if assignedIntervals[best] == nil {
 					assignedIntervals[best] = map[string][][2]int{}
