@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"nurseshift/priority-service/internal/infrastructure/config"
+	"nurseshift/priority-service/internal/infrastructure/database"
 	"nurseshift/priority-service/internal/interfaces/http/handlers"
 	"nurseshift/priority-service/internal/interfaces/http/middleware"
 
@@ -50,8 +51,16 @@ func main() {
 		app.Use(logger.New())
 	}
 
+	// Initialize DB connection & repository
+	conn, err := database.NewConnection(cfg)
+	if err != nil {
+		log.Fatalf("Failed to connect database: %v", err)
+	}
+	defer conn.Close()
+	priorityRepo := database.NewPriorityRepository(conn)
+
 	// Initialize handlers
-	priorityHandler := handlers.NewPriorityHandler()
+	priorityHandler := handlers.NewPriorityHandler(priorityRepo)
 
 	// Routes
 	api := app.Group("/api/v1")

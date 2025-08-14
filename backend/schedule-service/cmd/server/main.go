@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"nurseshift/schedule-service/internal/infrastructure/config"
+	dbpkg "nurseshift/schedule-service/internal/infrastructure/database"
 	"nurseshift/schedule-service/internal/interfaces/http/handlers"
 	"nurseshift/schedule-service/internal/interfaces/http/middleware"
 
@@ -50,8 +51,14 @@ func main() {
 		app.Use(logger.New())
 	}
 
-	// Initialize handlers
-	scheduleHandler := handlers.NewScheduleHandler()
+	// Initialize DB + repository + handlers
+	conn, err := dbpkg.NewConnection(cfg)
+	if err != nil {
+		log.Fatalf("DB connect error: %v", err)
+	}
+	defer conn.Close()
+	repo := dbpkg.NewScheduleRepository(conn)
+	scheduleHandler := handlers.NewScheduleHandler(repo)
 
 	// Routes
 	api := app.Group("/api/v1")
@@ -63,10 +70,22 @@ func main() {
 		schedules.Get("/", scheduleHandler.GetSchedules)
 		schedules.Post("/", scheduleHandler.CreateSchedule)
 		schedules.Get("/stats", scheduleHandler.GetScheduleStats)
+		schedules.Get("/shifts", scheduleHandler.ListShifts)
+		schedules.Post("/optimize-generate", scheduleHandler.OptimizeGenerate)
 		schedules.Get("/:id", scheduleHandler.GetSchedule)
 		schedules.Put("/:id", scheduleHandler.UpdateSchedule)
 		schedules.Delete("/:id", scheduleHandler.DeleteSchedule)
+
+		// TODO: add auto-generate endpoints next
 	}
+
+	// Auto-generate routes
+	apiAuth := api.Group("/schedules").Use(middleware.AuthMiddleware(""))
+	apiAuth.Post("/auto-generate", scheduleHandler.AutoGenerate)
+	apiAuth.Post("/ai-generate", scheduleHandler.AIGenerate)
+
+	// Calendar meta (working/holiday)
+	api.Get("/calendar-meta", scheduleHandler.CalendarMeta)
 
 	// Health check
 	app.Get("/health", scheduleHandler.Health)

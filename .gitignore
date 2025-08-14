@@ -151,3 +151,8 @@ docker-compose.override.yml
 config.env
 .env.local
 .env.production
+
+# Python
+**/.venv/
+**/__pycache__/
+*.py[cod]

@@ -1,332 +1,216 @@
 package handlers
 
 import (
+	"context"
+	"encoding/json"
 	"time"
+
+	"nurseshift/priority-service/internal/infrastructure/database"
 
 	"github.com/gofiber/fiber/v2"
 )
 
-// PriorityHandler handles priority-related HTTP requests
-type PriorityHandler struct{}
+// PriorityHandler handles priority-related HTTP requests (DB-backed)
+type PriorityHandler struct {
+	repo *database.PriorityRepository
+}
 
 // NewPriorityHandler creates a new priority handler
-func NewPriorityHandler() *PriorityHandler {
-	return &PriorityHandler{}
+func NewPriorityHandler(repo *database.PriorityRepository) *PriorityHandler {
+	return &PriorityHandler{repo: repo}
 }
 
-// Priority represents priority data structure
-type Priority struct {
-	ID           string                 `json:"id"`
-	UserID       string                 `json:"userId"`
-	Name         string                 `json:"name"`
-	Description  string                 `json:"description"`
-	Order        int                    `json:"order"`
-	IsActive     bool                   `json:"isActive"`
-	HasSettings  bool                   `json:"hasSettings"`
-	SettingType  *string                `json:"settingType"`
-	SettingValue *int                   `json:"settingValue"`
-	SettingUnit  *string                `json:"settingUnit"`
-	SettingLabel *string                `json:"settingLabel"`
-	Settings     map[string]interface{} `json:"settings"`
-	CreatedAt    time.Time              `json:"createdAt"`
-	UpdatedAt    time.Time              `json:"updatedAt"`
-}
-
-// Mock data
-var mockPriorities = []Priority{
-	{
-		ID:          "1",
-		UserID:      "user-1",
-		Name:        "วันที่ขอหยุด",
-		Description: "ระบบจะหลีกเลี่ยงการจัดเวรในวันที่พนักงานขอหยุด",
-		Order:       1,
-		IsActive:    true,
-		HasSettings: false,
-		Settings:    make(map[string]interface{}),
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
-	},
-	{
-		ID:           "2",
-		UserID:       "user-1",
-		Name:         "จำนวนเวรในแต่ละประเภทเท่ากัน",
-		Description:  "กระจายจำนวนเวรแต่ละประเภท (เช้า/บ่าย/ดึก) ให้แต่ละคนได้เท่าๆ กัน",
-		Order:        2,
-		IsActive:     true,
-		HasSettings:  true,
-		SettingType:  stringPtr("maxShiftTypeDifference"),
-		SettingValue: intPtr(2),
-		SettingUnit:  stringPtr("เวร"),
-		SettingLabel: stringPtr("ความแตกต่างจำนวนเวรแต่ละประเภทสูงสุด"),
-		Settings: map[string]interface{}{
-			"min":  0,
-			"max":  5,
-			"step": 1,
-		},
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-	},
-	{
-		ID:           "3",
-		UserID:       "user-1",
-		Name:         "เวรดึกติดกัน",
-		Description:  "จำกัดจำนวนเวรดึกที่พนักงานคนหนึ่งทำติดกันไม่เกิน X วัน",
-		Order:        3,
-		IsActive:     true,
-		HasSettings:  true,
-		SettingType:  stringPtr("maxConsecutiveNightShifts"),
-		SettingValue: intPtr(2),
-		SettingUnit:  stringPtr("วัน"),
-		SettingLabel: stringPtr("จำนวนเวรดึกติดกันสูงสุด"),
-		Settings: map[string]interface{}{
-			"min":  1,
-			"max":  5,
-			"step": 1,
-		},
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-	},
-	{
-		ID:           "4",
-		UserID:       "user-1",
-		Name:         "เวรติดต่อกัน",
-		Description:  "จำกัดจำนวนเวรทุกประเภทที่พนักงานคนหนึ่งทำติดกันไม่เกิน X วัน",
-		Order:        4,
-		IsActive:     true,
-		HasSettings:  true,
-		SettingType:  stringPtr("maxConsecutiveShifts"),
-		SettingValue: intPtr(4),
-		SettingUnit:  stringPtr("วัน"),
-		SettingLabel: stringPtr("จำนวนเวรติดต่อกันสูงสุด"),
-		Settings: map[string]interface{}{
-			"min":  1,
-			"max":  10,
-			"step": 1,
-		},
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-	},
-	{
-		ID:           "5",
-		UserID:       "user-1",
-		Name:         "จำนวนชั่วโมงการทำงานติดต่อกันสูงสุด",
-		Description:  "จำกัดจำนวนชั่วโมงการทำงานต่อเนื่องของพนักงานคนหนึ่งไม่เกิน X ชั่วโมง",
-		Order:        5,
-		IsActive:     false,
-		HasSettings:  true,
-		SettingType:  stringPtr("maxConsecutiveWorkHours"),
-		SettingValue: intPtr(48),
-		SettingUnit:  stringPtr("ชั่วโมง"),
-		SettingLabel: stringPtr("จำนวนชั่วโมงทำงานติดต่อกันสูงสุด"),
-		Settings: map[string]interface{}{
-			"min":  12,
-			"max":  72,
-			"step": 6,
-		},
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-	},
-}
-
-// GetPriorities returns all priorities for a user
+// GetPriorities returns all priorities for a department
+// Frontend จะส่ง departmentId มาใน query; ถ้าไม่ส่งให้บังคับ
 func (h *PriorityHandler) GetPriorities(c *fiber.Ctx) error {
-	userID := c.Query("userId", "user-1") // Default to user-1 for demo
-
-	var userPriorities []Priority
-	for _, priority := range mockPriorities {
-		if priority.UserID == userID {
-			userPriorities = append(userPriorities, priority)
-		}
+	departmentID := c.Query("departmentId")
+	if departmentID == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "error",
+			"message": "กรุณาระบุ departmentId",
+		})
 	}
 
-	// Sort by order
-	for i := 0; i < len(userPriorities)-1; i++ {
-		for j := i + 1; j < len(userPriorities); j++ {
-			if userPriorities[i].Order > userPriorities[j].Order {
-				userPriorities[i], userPriorities[j] = userPriorities[j], userPriorities[i]
-			}
-		}
+	ctx, cancel := context.WithTimeout(c.Context(), 5*time.Second)
+	defer cancel()
+	items, err := h.repo.FindOrCreateDefaults(ctx, departmentID)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"status": "error", "message": err.Error()})
 	}
 
-	// Count active priorities
+	// map to frontend shape
+	result := make([]fiber.Map, 0, len(items))
 	activeCount := 0
-	for _, priority := range userPriorities {
-		if priority.IsActive {
+	for _, it := range items {
+		if it.IsActive {
 			activeCount++
 		}
+		// Derive UI setting metadata by name
+		hasSettings := true
+		settingType := ""
+		settingUnit := ""
+		settingLabel := ""
+		var defaultVal int
+		switch it.Name {
+		case "วันที่ขอหยุด":
+			hasSettings = false
+		case "จำนวนเวรเท่ากันในแต่ละประเภท":
+			settingType = "maxShiftTypeDifference"
+			settingUnit = "เวร"
+			settingLabel = "ความแตกต่างจำนวนเวรแต่ละประเภทสูงสุด"
+			defaultVal = 2
+		case "จำนวนเวรดึกติดต่อกัน":
+			settingType = "maxConsecutiveNightShifts"
+			settingUnit = "วัน"
+			settingLabel = "จำนวนเวรดึกติดกันสูงสุด"
+			defaultVal = 2
+		case "จำนวนเวรติดต่อกัน":
+			settingType = "maxConsecutiveShifts"
+			settingUnit = "วัน"
+			settingLabel = "จำนวนเวรติดต่อกันสูงสุด"
+			defaultVal = 4
+		case "จำนวนชั่วโมงทำงานสูงสุดติดต่อกันโดยไม่พัก":
+			settingType = "maxConsecutiveWorkHours"
+			settingUnit = "ชั่วโมง"
+			settingLabel = "จำนวนชั่วโมงทำงานติดต่อกันสูงสุด"
+			defaultVal = 48
+		case "จำนวนชั่วโมงการทำงานทั้งหมด":
+			// ตีความเป็นความแตกต่างชั่วโมงทำงานรวมระหว่างบุคคล
+			settingType = "maxTotalWorkHoursDifference"
+			settingUnit = "ชั่วโมง"
+			settingLabel = "ความแตกต่างชั่วโมงการทำงานรวมสูงสุดระหว่างบุคคล"
+			defaultVal = 16
+		}
+
+		// Extract setting value from config JSON if exists
+		var settingValue *int
+		if it.Config.Valid {
+			var obj map[string]any
+			if err := json.Unmarshal([]byte(it.Config.String), &obj); err == nil {
+				if v, ok := obj["value"].(float64); ok {
+					vv := int(v)
+					settingValue = &vv
+				}
+			}
+		}
+		if settingValue == nil && hasSettings {
+			v := defaultVal
+			settingValue = &v
+		}
+
+		m := fiber.Map{
+			"id":          it.ID,
+			"name":        it.Name,
+			"description": it.Description.String,
+			"order":       it.PriorityOrder,
+			"isActive":    it.IsActive,
+			"hasSettings": hasSettings,
+			"createdAt":   it.CreatedAt,
+			"updatedAt":   it.UpdatedAt,
+		}
+		if hasSettings {
+			m["settingType"] = settingType
+			m["settingUnit"] = settingUnit
+			m["settingLabel"] = settingLabel
+			m["settingValue"] = settingValue
+		}
+		result = append(result, m)
 	}
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"status":  "success",
 		"message": "ดึงข้อมูลความสำคัญสำเร็จ",
 		"data": fiber.Map{
-			"priorities":  userPriorities,
-			"total":       len(userPriorities),
+			"priorities":  result,
+			"total":       len(result),
 			"activeCount": activeCount,
 		},
 	})
 }
 
-// UpdatePriority updates priority information (including order and active status)
+// UpdatePriority updates order or active status
 func (h *PriorityHandler) UpdatePriority(c *fiber.Ctx) error {
-	priorityID := c.Params("id")
-
+	id := c.Params("id")
 	var req struct {
 		Order    *int  `json:"order"`
 		IsActive *bool `json:"isActive"`
 	}
-
 	if err := c.BodyParser(&req); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"status":  "error",
-			"message": "ข้อมูลที่ส่งมาไม่ถูกต้อง",
-			"error":   err.Error(),
-		})
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"status": "error", "message": "ข้อมูลที่ส่งมาไม่ถูกต้อง"})
 	}
 
-	// Find and update priority
-	for i, priority := range mockPriorities {
-		if priority.ID == priorityID {
-			if req.Order != nil {
-				mockPriorities[i].Order = *req.Order
-			}
-			if req.IsActive != nil {
-				mockPriorities[i].IsActive = *req.IsActive
-			}
-			mockPriorities[i].UpdatedAt = time.Now()
+	ctx, cancel := context.WithTimeout(c.Context(), 5*time.Second)
+	defer cancel()
 
-			// If order is updated, we might need to reorder other priorities
-			if req.Order != nil {
-				// Simple reorder logic - in real implementation, this would be more sophisticated
-				h.reorderPriorities(priority.UserID)
-			}
-
-			return c.Status(fiber.StatusOK).JSON(fiber.Map{
-				"status":  "success",
-				"message": "อัปเดตความสำคัญสำเร็จ",
-				"data":    mockPriorities[i],
-			})
+	if req.IsActive != nil {
+		if err := h.repo.UpdateActive(ctx, id, *req.IsActive); err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"status": "error", "message": err.Error()})
+		}
+	}
+	if req.Order != nil {
+		if err := h.repo.UpdateOrderAndReorder(ctx, id, *req.Order); err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"status": "error", "message": err.Error()})
 		}
 	}
 
-	return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-		"status":  "error",
-		"message": "ไม่พบข้อมูลความสำคัญ",
-	})
-}
-
-// UpdatePrioritySetting updates priority setting value
-func (h *PriorityHandler) UpdatePrioritySetting(c *fiber.Ctx) error {
-	priorityID := c.Params("id")
-
-	var req struct {
-		SettingValue int `json:"settingValue" validate:"required"`
+	rec, err := h.repo.GetByID(ctx, id)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"status": "error", "message": err.Error()})
 	}
-
-	if err := c.BodyParser(&req); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"status":  "error",
-			"message": "ข้อมูลที่ส่งมาไม่ถูกต้อง",
-			"error":   err.Error(),
-		})
-	}
-
-	// Find and update priority setting
-	for i, priority := range mockPriorities {
-		if priority.ID == priorityID {
-			if !priority.HasSettings {
-				return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-					"status":  "error",
-					"message": "ความสำคัญนี้ไม่สามารถตั้งค่าได้",
-				})
-			}
-
-			// Validate setting value range
-			if minVal, ok := priority.Settings["min"].(int); ok {
-				if req.SettingValue < minVal {
-					return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-						"status":  "error",
-						"message": "ค่าที่ส่งมาต่ำกว่าค่าต่ำสุดที่อนุญาต",
-					})
-				}
-			}
-
-			if maxVal, ok := priority.Settings["max"].(int); ok {
-				if req.SettingValue > maxVal {
-					return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-						"status":  "error",
-						"message": "ค่าที่ส่งมาสูงกว่าค่าสูงสุดที่อนุญาต",
-					})
-				}
-			}
-
-			mockPriorities[i].SettingValue = &req.SettingValue
-			mockPriorities[i].UpdatedAt = time.Now()
-
-			return c.Status(fiber.StatusOK).JSON(fiber.Map{
-				"status":  "success",
-				"message": "อัปเดตค่าตั้งความสำคัญสำเร็จ",
-				"data":    mockPriorities[i],
-			})
-		}
-	}
-
-	return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-		"status":  "error",
-		"message": "ไม่พบข้อมูลความสำคัญ",
-	})
-}
-
-// SwapPriorityOrder swaps the order of two priorities
-func (h *PriorityHandler) SwapPriorityOrder(c *fiber.Ctx) error {
-	var req struct {
-		PriorityID1 string `json:"priorityId1" validate:"required"`
-		PriorityID2 string `json:"priorityId2" validate:"required"`
-	}
-
-	if err := c.BodyParser(&req); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"status":  "error",
-			"message": "ข้อมูลที่ส่งมาไม่ถูกต้อง",
-			"error":   err.Error(),
-		})
-	}
-
-	var priority1, priority2 *Priority
-	var index1, index2 int
-
-	// Find both priorities
-	for i, priority := range mockPriorities {
-		if priority.ID == req.PriorityID1 {
-			priority1 = &priority
-			index1 = i
-		}
-		if priority.ID == req.PriorityID2 {
-			priority2 = &priority
-			index2 = i
-		}
-	}
-
-	if priority1 == nil || priority2 == nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"status":  "error",
-			"message": "ไม่พบข้อมูลความสำคัญที่ต้องการสลับ",
-		})
-	}
-
-	// Swap orders
-	mockPriorities[index1].Order, mockPriorities[index2].Order = mockPriorities[index2].Order, mockPriorities[index1].Order
-	mockPriorities[index1].UpdatedAt = time.Now()
-	mockPriorities[index2].UpdatedAt = time.Now()
-
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"status":  "success",
-		"message": "สลับลำดับความสำคัญสำเร็จ",
+		"message": "อัปเดตความสำคัญสำเร็จ",
 		"data": fiber.Map{
-			"priority1": mockPriorities[index1],
-			"priority2": mockPriorities[index2],
+			"id":          rec.ID,
+			"name":        rec.Name,
+			"description": rec.Description.String,
+			"order":       rec.PriorityOrder,
+			"isActive":    rec.IsActive,
+			"hasSettings": false,
+			"createdAt":   rec.CreatedAt,
+			"updatedAt":   rec.UpdatedAt,
 		},
 	})
+}
+
+// UpdatePrioritySetting placeholder (ยังไม่เก็บค่า settings ใน schema นี้)
+func (h *PriorityHandler) UpdatePrioritySetting(c *fiber.Ctx) error {
+	id := c.Params("id")
+	var req struct {
+		SettingValue int `json:"settingValue"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"status": "error", "message": "ข้อมูลที่ส่งมาไม่ถูกต้อง"})
+	}
+	ctx, cancel := context.WithTimeout(c.Context(), 5*time.Second)
+	defer cancel()
+	if err := h.repo.UpdateSetting(ctx, id, req.SettingValue); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"status": "error", "message": err.Error()})
+	}
+	rec, err := h.repo.GetByID(ctx, id)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"status": "error", "message": err.Error()})
+	}
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{"status": "success", "data": fiber.Map{
+		"id": rec.ID, "name": rec.Name, "description": rec.Description.String, "order": rec.PriorityOrder, "isActive": rec.IsActive,
+	}})
+}
+
+// SwapPriorityOrder swaps order of two ids
+func (h *PriorityHandler) SwapPriorityOrder(c *fiber.Ctx) error {
+	var req struct {
+		PriorityID1 string `json:"priorityId1"`
+		PriorityID2 string `json:"priorityId2"`
+	}
+	if err := c.BodyParser(&req); err != nil || req.PriorityID1 == "" || req.PriorityID2 == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"status": "error", "message": "ข้อมูลที่ส่งมาไม่ถูกต้อง"})
+	}
+	ctx, cancel := context.WithTimeout(c.Context(), 5*time.Second)
+	defer cancel()
+	if err := h.repo.SwapOrder(ctx, req.PriorityID1, req.PriorityID2); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"status": "error", "message": err.Error()})
+	}
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{"status": "success", "message": "สลับลำดับความสำคัญสำเร็จ"})
 }
 
 // Health returns service health status
@@ -336,39 +220,4 @@ func (h *PriorityHandler) Health(c *fiber.Ctx) error {
 		"service":   "priority-service",
 		"timestamp": time.Now(),
 	})
-}
-
-// Helper function to reorder priorities for a user
-func (h *PriorityHandler) reorderPriorities(userID string) {
-	var userPriorities []int
-
-	for i, priority := range mockPriorities {
-		if priority.UserID == userID {
-			userPriorities = append(userPriorities, i)
-		}
-	}
-
-	// Sort by order
-	for i := 0; i < len(userPriorities)-1; i++ {
-		for j := i + 1; j < len(userPriorities); j++ {
-			if mockPriorities[userPriorities[i]].Order > mockPriorities[userPriorities[j]].Order {
-				userPriorities[i], userPriorities[j] = userPriorities[j], userPriorities[i]
-			}
-		}
-	}
-
-	// Reassign sequential orders
-	for i, priorityIndex := range userPriorities {
-		mockPriorities[priorityIndex].Order = i + 1
-		mockPriorities[priorityIndex].UpdatedAt = time.Now()
-	}
-}
-
-// Helper functions
-func stringPtr(s string) *string {
-	return &s
-}
-
-func intPtr(i int) *int {
-	return &i
 }

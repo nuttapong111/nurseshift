@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"nurseshift/auth-service/internal/infrastructure/config"
+	"nurseshift/priority-service/internal/infrastructure/config"
 
 	_ "github.com/lib/pq"
 )
