@@ -17,8 +17,10 @@ export const EmailVerification: React.FC<EmailVerificationProps> = ({
   const [step, setStep] = useState<'input' | 'verification'>('input')
   
   const { 
-    loading, 
-    error, 
+    sendLoading, 
+    sendError, 
+    verifyLoading,
+    verifyError,
     sendVerificationEmail, 
     verifyEmail, 
     clearError 
@@ -66,9 +68,9 @@ export const EmailVerification: React.FC<EmailVerificationProps> = ({
           </p>
         </div>
 
-        {error && (
+        {(sendError || verifyError) && (
           <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
-            {error}
+            {sendError || verifyError}
           </div>
         )}
 
@@ -89,10 +91,10 @@ export const EmailVerification: React.FC<EmailVerificationProps> = ({
 
           <button
             onClick={handleVerifyEmail}
-            disabled={loading || !verificationToken.trim()}
+            disabled={verifyLoading || !verificationToken.trim()}
             className="w-full bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
           >
-            {loading ? 'กำลังยืนยัน...' : 'ยืนยันอีเมล'}
+            {verifyLoading ? 'กำลังยืนยัน...' : 'ยืนยันอีเมล'}
           </button>
 
           <button
@@ -115,9 +117,9 @@ export const EmailVerification: React.FC<EmailVerificationProps> = ({
         </p>
       </div>
 
-      {error && (
+      {(sendError || verifyError) && (
         <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
-          {error}
+          {sendError || verifyError}
         </div>
       )}
 
@@ -138,10 +140,10 @@ export const EmailVerification: React.FC<EmailVerificationProps> = ({
 
         <button
           onClick={handleSendVerificationEmail}
-          disabled={loading || !inputEmail.trim()}
+          disabled={sendLoading || !inputEmail.trim()}
           className="w-full bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
         >
-          {loading ? 'กำลังส่ง...' : 'ส่งอีเมลยืนยัน'}
+          {sendLoading ? 'กำลังส่ง...' : 'ส่งอีเมลยืนยัน'}
         </button>
       </div>
     </div>

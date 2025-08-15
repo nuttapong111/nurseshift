@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 export default function EmailVerificationPage() {
   const [showVerificationStatus, setShowVerificationStatus] = useState(false)
   const [verificationEmail, setVerificationEmail] = useState('')
-  const { checkEmailVerification, loading: checkLoading, error: checkError } = useEmailVerification()
+  const { checkEmailVerification, checkLoading, checkError } = useEmailVerification()
 
   const handleCheckVerification = async () => {
     if (!verificationEmail.trim()) return

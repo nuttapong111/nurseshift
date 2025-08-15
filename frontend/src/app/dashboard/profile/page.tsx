@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Image from 'next/image'
 import { 
   UserIcon,
   KeyIcon,
@@ -213,6 +214,8 @@ export default function ProfilePage() {
   }
 
   const handleEmailVerification = async () => {
+    if (!user) return
+
     try {
       // เรียก API การส่งอีเมลยืนยัน
       const response = await userService.sendVerificationEmail(user.email)
@@ -274,10 +277,12 @@ export default function ProfilePage() {
             <div className="flex items-center space-x-6">
               <div className="relative">
                 {user.avatarUrl ? (
-                  <img 
+                  <Image 
                     src={user.avatarUrl} 
                     alt="Avatar" 
-                    className="w-24 h-24 rounded-full object-cover"
+                    width={96}
+                    height={96}
+                    className="rounded-full object-cover"
                   />
                 ) : (
                   <div className="w-24 h-24 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-2xl font-bold">

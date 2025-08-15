@@ -91,11 +91,25 @@ const mockPayments = [
 
 export default function PackagesPage() {
   const [packages] = useState(mockPackages)
-  const [payments, setPayments] = useState(mockPayments)
+  type PaymentStatus = 'approved' | 'pending' | 'rejected'
+
+  interface Payment {
+    id: number
+    packageName: string
+    amount: number
+    paymentDate: string
+    status: PaymentStatus
+    evidence: string
+    approvedDate: string | null
+    extendedDays: number | null
+    rejectReason?: string
+  }
+
+  const [payments, setPayments] = useState<Payment[]>(mockPayments)
   const [showPaymentModal, setShowPaymentModal] = useState(false)
   const [showResubmitModal, setShowResubmitModal] = useState(false)
   const [selectedPackage, setSelectedPackage] = useState<typeof mockPackages[0] | null>(null)
-  const [selectedPayment, setSelectedPayment] = useState<typeof mockPayments[0] | null>(null)
+  const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null)
   const [evidence, setEvidence] = useState<File | null>(null)
 
   const handleSelectPackage = (pkg: typeof mockPackages[0]) => {
@@ -137,7 +151,7 @@ export default function PackagesPage() {
     })
   }
 
-  const handleResubmitPayment = (payment: typeof mockPayments[0]) => {
+  const handleResubmitPayment = (payment: Payment) => {
     setSelectedPayment(payment)
     setShowResubmitModal(true)
   }

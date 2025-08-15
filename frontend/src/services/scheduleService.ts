@@ -83,6 +83,39 @@ class ScheduleService {
     if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`)
   }
 
+  async editShift(data: {
+    departmentId: string
+    date: string
+    shiftId: string
+    addNurses: string[]
+    addAssistants: string[]
+    removeNurses: string[]
+    removeAssistants: string[]
+  }): Promise<void> {
+    const res = await fetch(`${API_BASE_URL}/api/v1/schedules/edit-shift`, {
+      method: 'POST',
+      headers: await this.headers(),
+      body: JSON.stringify(data),
+    })
+    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`)
+  }
+
+  async checkShiftOverlap(data: {
+    departmentId: string
+    date: string
+    shiftId: string
+    staffId: string
+  }): Promise<{ canAssign: boolean; reason?: string }> {
+    const res = await fetch(`${API_BASE_URL}/api/v1/schedules/check-overlap`, {
+      method: 'POST',
+      headers: await this.headers(),
+      body: JSON.stringify(data),
+    })
+    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`)
+    const body = await res.json()
+    return body.data
+  }
+
   async autoGenerate(departmentId: string, month: string): Promise<{ inserted: number }> {
     const res = await fetch(`${API_BASE_URL}/api/v1/schedules/auto-generate`, {
       method: 'POST',

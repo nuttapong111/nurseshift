@@ -1963,9 +1963,89 @@ export default function SchedulePage() {
                   ยกเลิก
                 </Button>
                 <Button 
-                  onClick={() => {
-                    // TODO: Save changes
-                    setShowEditShiftModal(false)
+                  onClick={async () => {
+                    try {
+                      // Show loading
+                      Swal.fire({
+                        title: 'กำลังบันทึกการแก้ไข...',
+                        html: '<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>',
+                        showConfirmButton: false,
+                        allowOutsideClick: false,
+                        allowEscapeKey: false
+                      })
+
+                      // Get current staff IDs
+                      const currentNurseIds = editingShift.nurses.map(n => String(n.id))
+                      const currentAssistantIds = editingShift.assistants.map(a => String(a.id))
+
+                      // Get available staff IDs
+                      const availableNurseIds = employees
+                        .filter(emp => emp.position === 'nurse' && 
+                          !editingShift.nurses.some(n => n.id === emp.id))
+                        .map(n => String(n.id))
+                      const availableAssistantIds = employees
+                        .filter(emp => emp.position === 'assistant' && 
+                          !editingShift.assistants.some(a => a.id === emp.id))
+                        .map(a => String(a.id))
+
+                      // Check overlap for each staff to be added
+                      const checkOverlap = async (staffId: string) => {
+                        const result = await scheduleService.checkShiftOverlap({
+                          departmentId: selectedDepartment,
+                          date: editingShift.date,
+                          shiftId: editingShift.shiftId,
+                          staffId
+                        })
+                        return result.canAssign
+                      }
+
+                      // Filter out staff with overlapping shifts
+                      const addableNurses = await Promise.all(
+                        availableNurseIds.map(async id => ({
+                          id,
+                          canAdd: await checkOverlap(id)
+                        }))
+                      )
+                      const addableAssistants = await Promise.all(
+                        availableAssistantIds.map(async id => ({
+                          id,
+                          canAdd: await checkOverlap(id)
+                        }))
+                      )
+
+                      // Edit shift
+                      await scheduleService.editShift({
+                        departmentId: selectedDepartment,
+                        date: editingShift.date,
+                        shiftId: editingShift.shiftId,
+                        addNurses: addableNurses.filter(n => n.canAdd).map(n => n.id),
+                        addAssistants: addableAssistants.filter(a => a.canAdd).map(a => a.id),
+                        removeNurses: currentNurseIds,
+                        removeAssistants: currentAssistantIds
+                      })
+
+                      // Refresh data
+                      await reloadScheduleData()
+
+                      // Close modal and show success
+                      setShowEditShiftModal(false)
+                      Swal.fire({
+                        icon: 'success',
+                        title: 'แก้ไขเวรสำเร็จ',
+                        text: 'ข้อมูลถูกบันทึกและรีเฟรชแล้ว',
+                        confirmButtonColor: '#2563eb',
+                        timer: 3000,
+                        timerProgressBar: true
+                      })
+
+                    } catch (error: any) {
+                      Swal.fire({
+                        icon: 'error',
+                        title: 'ไม่สามารถแก้ไขเวรได้',
+                        text: error?.message || 'เกิดข้อผิดพลาด',
+                        confirmButtonColor: '#2563eb'
+                      })
+                    }
                   }}
                   className="px-6 bg-blue-600 hover:bg-blue-700"
                 >
