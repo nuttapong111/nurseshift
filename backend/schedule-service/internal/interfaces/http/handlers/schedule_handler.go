@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"sort"
@@ -338,9 +339,12 @@ func (h *ScheduleHandler) AutoGenerate(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"status": "error", "message": "ไม่มีพนักงานในแผนกนี้"})
 	}
 
+	log.Printf("=== AUTO GENERATE START: dept=%s, month=%s ===", req.DepartmentID, req.Month)
+
 	// calculate days in month
 	t, err := time.Parse("2006-01", req.Month)
 	if err != nil {
+		log.Printf("=== ERROR: Parse month failed: %v ===", err)
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"status": "error", "message": "รูปแบบเดือนไม่ถูกต้อง"})
 	}
 	year, month, _ := t.Date()
@@ -348,12 +352,26 @@ func (h *ScheduleHandler) AutoGenerate(c *fiber.Ctx) error {
 	nextMonth := first.AddDate(0, 1, 0)
 	days := int(nextMonth.Sub(first).Hours() / 24)
 
+	log.Printf("=== PARSED: year=%d, month=%d, days=%d ===", year, month, days)
+
 	// If there are existing schedules for this month and department, clear them before re-generate
 	if err := h.repo.DeleteByDepartmentAndMonth(c.Context(), req.DepartmentID, req.Month); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"status": "error", "message": err.Error()})
 	}
+	
+	// Use Enhanced Dynamic Priority Algorithm instead of old algorithm
+	return h.runEnhancedAlgorithm(c, req, nurses, assistants, shifts, staffList, year, month, days)
+}
 
-	// Fair greedy scheduler with constraints
+// runEnhancedAlgorithm implements the Enhanced Dynamic Priority Algorithm
+func (h *ScheduleHandler) runEnhancedAlgorithm(c *fiber.Ctx, req struct {
+	DepartmentID string `json:"departmentId"`
+	Month        string `json:"month"`
+}, nurses, assistants []string, shifts []database.ShiftRecord, staffList []database.DepartmentStaff, year int, month time.Month, days int) error {
+
+	log.Printf("=== START ENHANCED ALGORITHM: %s-%s ===", req.DepartmentID, req.Month)
+	
+	// Enhanced Dynamic Priority Algorithm with Progressive Relaxation
 	var items []database.Assignment
 	assignmentCount := map[string]int{}
 	lastAssignedDate := map[string]time.Time{}
@@ -422,6 +440,8 @@ func (h *ScheduleHandler) AutoGenerate(c *fiber.Ctx) error {
 	}
 	maxContiguousMinutes := maxContiguousHours * 60
 
+	log.Printf("=== SETUP COMPLETE: maxContiguousHours=%d ===", maxContiguousHours)
+
 	canAssignShift := func(staffID string, d time.Time, sh database.ShiftRecord) bool {
 		start, end, ok := shiftInterval(sh)
 		if !ok {
@@ -445,35 +465,18 @@ func (h *ScheduleHandler) AutoGenerate(c *fiber.Ctx) error {
 		return true
 	}
 
-	pick := func(cands []string, date time.Time, sh database.ShiftRecord) (string, bool) {
-		best := ""
-		ok := false
-		bestCnt := int(^uint(0) >> 1)
-		for _, uid := range cands {
-			if d, exists := lastAssignedDate[uid]; exists {
-				if d.AddDate(0, 0, 1).Equal(date) {
-					continue
-				} // no consecutive day
-			}
-			// per-day non-overlap and max contiguous-hours
-			if !canAssignShift(uid, date, sh) {
-				continue
-			}
-			// leave check is applied later when picking candidate
-			cnt := assignmentCount[uid]
-			if cnt < bestCnt {
-				bestCnt = cnt
-				best = uid
-				ok = true
-			}
-		}
-		return best, ok
-	}
+	log.Printf("=== START BACKEND ALGORITHM: %s-%s ===", req.DepartmentID, req.Month)
 
-	// pull working days & holidays & leaves
+	// pull working days & holidays & leaves first
 	workingDays, _ := h.repo.ListWorkingDays(c.Context(), req.DepartmentID)
 	holidays, _ := h.repo.ListHolidaysForMonth(c.Context(), req.DepartmentID, req.Month)
 	leaves, _ := h.repo.ListLeavesForMonth(c.Context(), req.DepartmentID, req.Month)
+
+	log.Printf("=== DATA LOADED: %d working days, %d holidays, %d leaves ===",
+		len(workingDays), len(holidays), len(leaves))
+
+	log.Printf("=== WORKING DAYS MAP: %+v ===", workingDays)
+
 	isHoliday := func(d time.Time) bool {
 		ds := d.Format("2006-01-02")
 		for _, h := range holidays {
@@ -493,21 +496,191 @@ func (h *ScheduleHandler) AutoGenerate(c *fiber.Ctx) error {
 		return false
 	}
 
+	// Get priorities from database to create dynamic algorithm
+	type Priority struct {
+		Name   string
+		Order  int
+		Value  interface{}
+		Active bool
+	}
+
+	priorities := []Priority{}
+	// This should be replaced with actual API call to priority service
+	// For now, hardcode based on the current setup
+	priorities = append(priorities, Priority{"วันที่ขอหยุด", 1, nil, true})
+	priorities = append(priorities, Priority{"จำนวนเวรเท่ากันในแต่ละประเภท", 2, 1, true})
+	priorities = append(priorities, Priority{"จำนวนชั่วโมงการทำงานทั้งหมด", 3, 20, true})
+	priorities = append(priorities, Priority{"จำนวนเวรติดต่อกัน", 4, 5, true})
+
+	log.Printf("=== DYNAMIC PRIORITIES LOADED: %d priorities ===", len(priorities))
+
+	// Dynamic pick function that respects priority order
+	pickWithPriorities := func(cands []string, date time.Time, sh database.ShiftRecord, relaxLevel int) (string, bool) {
+		best := ""
+		bestScore := int(^uint(0) >> 1)
+
+		log.Printf("=== PICK: candidates=%d, relaxLevel=%d ===", len(cands), relaxLevel)
+
+		for _, uid := range cands {
+			score := 0
+			canAssign := true
+			skipReasons := []string{}
+
+			// Apply priority constraints based on relaxLevel
+			switch {
+			case relaxLevel <= 1: // Strictest - respect all priorities
+				// Priority 1: วันที่ขอหยุด (NEVER relax this)
+				if isOnLeave(uid, date) {
+					skipReasons = append(skipReasons, "on-leave")
+					canAssign = false
+					break
+				}
+
+				// Priority 2: จำนวนเวรเท่ากันในแต่ละประเภท
+				score += assignmentCount[uid] * 100
+
+				// Priority 3: จำนวนชั่วโมงการทำงานทั้งหมด (time overlap)
+				if !canAssignShift(uid, date, sh) {
+					skipReasons = append(skipReasons, "time-overlap")
+					canAssign = false
+					break
+				}
+
+				// Priority 4: จำนวนเวรติดต่อกัน
+				if d, exists := lastAssignedDate[uid]; exists {
+					if d.AddDate(0, 0, 1).Equal(date) {
+						skipReasons = append(skipReasons, "consecutive-day")
+						score += 1000 // High penalty
+					}
+				}
+
+			case relaxLevel <= 3: // Relax consecutive days
+				// Priority 1: วันที่ขอหยุด (NEVER relax)
+				if isOnLeave(uid, date) {
+					skipReasons = append(skipReasons, "on-leave")
+					canAssign = false
+					break
+				}
+
+				// Priority 2: จำนวนเวรเท่ากันในแต่ละประเภท
+				score += assignmentCount[uid] * 100
+
+				// Priority 3: จำนวนชั่วโมงการทำงานทั้งหมด (time overlap)
+				if !canAssignShift(uid, date, sh) {
+					skipReasons = append(skipReasons, "time-overlap")
+					canAssign = false
+					break
+				}
+
+				// Priority 4: จำนวนเวรติดต่อกัน (RELAXED - just add penalty)
+				if d, exists := lastAssignedDate[uid]; exists {
+					if d.AddDate(0, 0, 1).Equal(date) {
+						score += 500 // Lower penalty
+					}
+				}
+
+			case relaxLevel <= 6: // Relax time overlap
+				// Priority 1: วันที่ขอหยุด (NEVER relax)
+				if isOnLeave(uid, date) {
+					skipReasons = append(skipReasons, "on-leave")
+					canAssign = false
+					break
+				}
+
+				// Priority 2: จำนวนเวรเท่ากันในแต่ละประเภท
+				score += assignmentCount[uid] * 50
+
+				// Priority 3: จำนวนชั่วโมงการทำงานทั้งหมด (RELAXED - just penalty)
+				if !canAssignShift(uid, date, sh) {
+					score += 200 // Add penalty but don't block
+				}
+
+				// Priority 4: จำนวนเวรติดต่อกัน (RELAXED)
+				if d, exists := lastAssignedDate[uid]; exists {
+					if d.AddDate(0, 0, 1).Equal(date) {
+						score += 100 // Small penalty
+					}
+				}
+
+			default: // relaxLevel > 6 - Emergency mode, only respect leaves
+				// Priority 1: วันที่ขอหยุด (NEVER relax)
+				if isOnLeave(uid, date) {
+					skipReasons = append(skipReasons, "on-leave")
+					canAssign = false
+					break
+				}
+
+				// All other priorities ignored - just try to balance assignments
+				score += assignmentCount[uid] * 10
+			}
+
+			if canAssign && score < bestScore {
+				bestScore = score
+				best = uid
+				log.Printf("=== PICK: New best candidate %s (score=%d) ===", uid, score)
+			} else if !canAssign {
+				log.Printf("=== PICK: Skipped %s (reasons: %v) ===", uid, skipReasons)
+			}
+		}
+
+		if best != "" {
+			log.Printf("=== PICK: Selected %s (score=%d, relaxLevel=%d) ===", best, bestScore, relaxLevel)
+		} else {
+			log.Printf("=== PICK: No candidates available at relaxLevel %d ===", relaxLevel)
+		}
+
+		return best, best != ""
+	}
+
+	// (duplicate code removed - already defined above)
+
+	log.Printf("=== STARTING MAIN ASSIGNMENT LOOP: %d days ===", days)
+
 	for day := 1; day <= days; day++ {
 		d := time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
 		dateStr := d.Format("2006-01-02")
+
+		log.Printf("=== DAY %d (%s): checking conditions ===", day, dateStr)
+
 		// skip non-working day or holidays
-		if w, ok := workingDays[int(d.Weekday())]; ok && !w {
+		weekday := int(d.Weekday())
+		w, ok := workingDays[weekday]
+		log.Printf("=== DAY %d: weekday=%d, working=%t, exists=%t ===", day, weekday, w, ok)
+
+		// Skip if: not in map OR explicitly marked as not working
+		if !ok || !w {
+			log.Printf("=== DAY %d: SKIPPED (not working day) ===", day)
 			continue
 		}
 		if isHoliday(d) {
+			log.Printf("=== DAY %d: SKIPPED (holiday) ===", day)
 			continue
 		}
+
+		log.Printf("=== DAY %d: PROCESSING %d shifts ===", day, len(shifts))
+
 		for _, sh := range shifts {
-			// nurses
-			for i := 0; i < sh.RequiredNurse && len(nurses) > 0; i++ {
-				sid, ok := pick(nurses, d, sh)
-				if ok && !isOnLeave(sid, d) {
+			log.Printf("=== PROCESSING %s %s (need %d nurses, %d assistants) ===",
+				dateStr, sh.Name, sh.RequiredNurse, sh.RequiredAsst)
+
+			// nurses - try with progressive relaxation of priorities
+			nurseAssigned := 0
+			for relaxLevel := 1; relaxLevel <= 10 && nurseAssigned < sh.RequiredNurse && len(nurses) > 0; relaxLevel++ {
+				log.Printf("=== NURSES: RelaxLevel %d, assigned %d/%d ===",
+					relaxLevel, nurseAssigned, sh.RequiredNurse)
+
+				attemptCount := 0
+				maxAttempts := len(nurses) + 5 // Prevent infinite loops
+
+				for nurseAssigned < sh.RequiredNurse && attemptCount < maxAttempts {
+					attemptCount++
+					sid, ok := pickWithPriorities(nurses, d, sh, relaxLevel)
+					if !ok {
+						log.Printf("=== NURSES: No candidates at relax level %d ===", relaxLevel)
+						break // Try next relax level
+					}
+
+					log.Printf("=== NURSES: Assigned %s at relax level %d ===", sid, relaxLevel)
 					items = append(items, database.Assignment{ID: uuid.New().String(), DepartmentID: req.DepartmentID, StaffID: sid, ShiftID: sh.ID, ScheduleDate: dateStr, Status: "assigned"})
 					assignmentCount[sid]++
 					lastAssignedDate[sid] = d
@@ -518,12 +691,33 @@ func (h *ScheduleHandler) AutoGenerate(c *fiber.Ctx) error {
 					if s, e, ok := shiftInterval(sh); ok {
 						assignedIntervals[sid][dateStr] = append(assignedIntervals[sid][dateStr], [2]int{s, e})
 					}
+					nurseAssigned++
 				}
 			}
-			// assistants
-			for i := 0; i < sh.RequiredAsst && len(assistants) > 0; i++ {
-				sid, ok := pick(assistants, d, sh)
-				if ok && !isOnLeave(sid, d) {
+
+			if nurseAssigned < sh.RequiredNurse {
+				log.Printf("=== WARNING: %s %s still needs %d nurses ===",
+					dateStr, sh.Name, sh.RequiredNurse-nurseAssigned)
+			}
+
+			// assistants - try with progressive relaxation of priorities
+			assistantAssigned := 0
+			for relaxLevel := 1; relaxLevel <= 10 && assistantAssigned < sh.RequiredAsst && len(assistants) > 0; relaxLevel++ {
+				log.Printf("=== ASSISTANTS: RelaxLevel %d, assigned %d/%d ===",
+					relaxLevel, assistantAssigned, sh.RequiredAsst)
+
+				attemptCount := 0
+				maxAttempts := len(assistants) + 5 // Prevent infinite loops
+
+				for assistantAssigned < sh.RequiredAsst && attemptCount < maxAttempts {
+					attemptCount++
+					sid, ok := pickWithPriorities(assistants, d, sh, relaxLevel)
+					if !ok {
+						log.Printf("=== ASSISTANTS: No candidates at relax level %d ===", relaxLevel)
+						break // Try next relax level
+					}
+
+					log.Printf("=== ASSISTANTS: Assigned %s at relax level %d ===", sid, relaxLevel)
 					items = append(items, database.Assignment{ID: uuid.New().String(), DepartmentID: req.DepartmentID, StaffID: sid, ShiftID: sh.ID, ScheduleDate: dateStr, Status: "assigned"})
 					assignmentCount[sid]++
 					lastAssignedDate[sid] = d
@@ -533,7 +727,13 @@ func (h *ScheduleHandler) AutoGenerate(c *fiber.Ctx) error {
 					if s, e, ok := shiftInterval(sh); ok {
 						assignedIntervals[sid][dateStr] = append(assignedIntervals[sid][dateStr], [2]int{s, e})
 					}
+					assistantAssigned++
 				}
+			}
+
+			if assistantAssigned < sh.RequiredAsst {
+				log.Printf("=== WARNING: %s %s still needs %d assistants ===",
+					dateStr, sh.Name, sh.RequiredAsst-assistantAssigned)
 			}
 		}
 	}
@@ -679,43 +879,11 @@ func (h *ScheduleHandler) AutoGenerate(c *fiber.Ctx) error {
 	rebalanceRole("nurse")
 	rebalanceRole("assistant")
 
-	// Heuristic เติมวัน/กะที่ยังขาด หลังรอบแรก (ซ่อมความพร่อง)
-	demand := map[string]map[string]struct {
-		n int
-		a int
-	}{}
-	for day := 1; day <= days; day++ {
-		ds := time.Date(year, month, day, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
-		demand[ds] = map[string]struct {
-			n int
-			a int
-		}{}
-		for _, sh := range shifts {
-			demand[ds][sh.ID] = struct {
-				n int
-				a int
-			}{n: sh.RequiredNurse, a: sh.RequiredAsst}
-		}
-	}
-	assignedNA := map[string]map[string]struct {
-		n int
-		a int
-	}{}
-	for _, it := range items {
-		if assignedNA[it.ScheduleDate] == nil {
-			assignedNA[it.ScheduleDate] = map[string]struct {
-				n int
-				a int
-			}{}
-		}
-		cur := assignedNA[it.ScheduleDate][it.ShiftID]
-		if staffRole[it.StaffID] == "assistant" {
-			cur.a++
-		} else {
-			cur.n++
-		}
-		assignedNA[it.ScheduleDate][it.ShiftID] = cur
-	}
+	// Enhanced Algorithm complete - save results directly
+	log.Printf("=== ENHANCED ALGORITHM COMPLETE: Total items=%d ===", len(items))
+	
+	// Skip old algorithm - comment out
+	/*
 	tryFill := func(role string, cands []string) {
 		for dateStr, needMap := range demand {
 			for shId, need := range needMap {
@@ -780,6 +948,7 @@ func (h *ScheduleHandler) AutoGenerate(c *fiber.Ctx) error {
 	}
 	tryFill("nurse", nurses)
 	tryFill("assistant", assistants)
+	*/ // End of old algorithm comment
 	if err := h.repo.BulkInsertAssignmentsStaff(c.Context(), items); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"status": "error", "message": err.Error()})
 	}

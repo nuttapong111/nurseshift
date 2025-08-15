@@ -81,7 +81,7 @@ export default function DepartmentSettingsPage() {
       // Shifts
       setShifts(data.shifts.map(s => ({
         id: s.id,
-        name: s.name,
+        name: s.name || '',
         startTime: s.startTime,
         endTime: s.endTime,
         nurseCount: s.requiredNurses,
@@ -262,7 +262,7 @@ export default function DepartmentSettingsPage() {
     setShowAddHolidayModal(false)
   }
 
-  const handleDeleteShift = async (shiftId: number, shiftName: string) => {
+  const handleDeleteShift = async (shiftId: string, shiftName: string) => {
     const result = await Swal.fire({
       title: 'ลบเวร?',
       text: `คุณต้องการลบเวร "${shiftName}" หรือไม่?`,
@@ -368,7 +368,7 @@ export default function DepartmentSettingsPage() {
                   <div key={shift.id} className="p-4 border border-gray-200 rounded-lg">
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex-1">
-                        <h3 className="font-medium text-gray-900">{shift.name || shift.type || 'เวร'}</h3>
+                        <h3 className="font-medium text-gray-900">{shift.name || 'เวร'}</h3>
                         <p className="text-sm text-gray-500">
                           {shift.startTime} - {shift.endTime}
                         </p>
