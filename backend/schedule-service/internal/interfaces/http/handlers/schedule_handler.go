@@ -358,7 +358,7 @@ func (h *ScheduleHandler) AutoGenerate(c *fiber.Ctx) error {
 	if err := h.repo.DeleteByDepartmentAndMonth(c.Context(), req.DepartmentID, req.Month); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"status": "error", "message": err.Error()})
 	}
-	
+
 	// Use Enhanced Dynamic Priority Algorithm instead of old algorithm
 	return h.runEnhancedAlgorithm(c, req, nurses, assistants, shifts, staffList, year, month, days)
 }
@@ -370,7 +370,7 @@ func (h *ScheduleHandler) runEnhancedAlgorithm(c *fiber.Ctx, req struct {
 }, nurses, assistants []string, shifts []database.ShiftRecord, staffList []database.DepartmentStaff, year int, month time.Month, days int) error {
 
 	log.Printf("=== START ENHANCED ALGORITHM: %s-%s ===", req.DepartmentID, req.Month)
-	
+
 	// Enhanced Dynamic Priority Algorithm with Progressive Relaxation
 	var items []database.Assignment
 	assignmentCount := map[string]int{}
@@ -881,73 +881,73 @@ func (h *ScheduleHandler) runEnhancedAlgorithm(c *fiber.Ctx, req struct {
 
 	// Enhanced Algorithm complete - save results directly
 	log.Printf("=== ENHANCED ALGORITHM COMPLETE: Total items=%d ===", len(items))
-	
+
 	// Skip old algorithm - comment out
 	/*
-	tryFill := func(role string, cands []string) {
-		for dateStr, needMap := range demand {
-			for shId, need := range needMap {
-				if assignedNA[dateStr] == nil {
-					assignedNA[dateStr] = map[string]struct {
-						n int
-						a int
-					}{}
-				}
-				got := assignedNA[dateStr][shId]
-				deficit := 0
-				if role == "assistant" {
-					deficit = need.a - got.a
-				} else {
-					deficit = need.n - got.n
-				}
-				for deficit > 0 {
-					best := ""
-					bestCnt := int(^uint(0) >> 1)
-					d := parseDate(dateStr)
-					for _, id := range cands {
-						if staffRole[id] != role {
-							continue
-						}
-						if isOnLeave(id, d) {
-							continue
-						}
-						if !canAssignOn(id, dateStr) {
-							continue
-						}
-						if assignmentCount[id] < bestCnt {
-							bestCnt = assignmentCount[id]
-							best = id
-						}
-					}
-					if best == "" {
-						break
-					}
-					items = append(items, database.Assignment{ID: uuid.New().String(), DepartmentID: req.DepartmentID, StaffID: best, ShiftID: shId, ScheduleDate: dateStr, Status: "assigned"})
-					assignmentCount[best]++
-					if assignedDates[best] == nil {
-						assignedDates[best] = map[string]bool{}
-					}
-					assignedDates[best][dateStr] = true
+		tryFill := func(role string, cands []string) {
+			for dateStr, needMap := range demand {
+				for shId, need := range needMap {
 					if assignedNA[dateStr] == nil {
 						assignedNA[dateStr] = map[string]struct {
 							n int
 							a int
 						}{}
 					}
-					got = assignedNA[dateStr][shId]
+					got := assignedNA[dateStr][shId]
+					deficit := 0
 					if role == "assistant" {
-						got.a++
+						deficit = need.a - got.a
 					} else {
-						got.n++
+						deficit = need.n - got.n
 					}
-					assignedNA[dateStr][shId] = got
-					deficit--
+					for deficit > 0 {
+						best := ""
+						bestCnt := int(^uint(0) >> 1)
+						d := parseDate(dateStr)
+						for _, id := range cands {
+							if staffRole[id] != role {
+								continue
+							}
+							if isOnLeave(id, d) {
+								continue
+							}
+							if !canAssignOn(id, dateStr) {
+								continue
+							}
+							if assignmentCount[id] < bestCnt {
+								bestCnt = assignmentCount[id]
+								best = id
+							}
+						}
+						if best == "" {
+							break
+						}
+						items = append(items, database.Assignment{ID: uuid.New().String(), DepartmentID: req.DepartmentID, StaffID: best, ShiftID: shId, ScheduleDate: dateStr, Status: "assigned"})
+						assignmentCount[best]++
+						if assignedDates[best] == nil {
+							assignedDates[best] = map[string]bool{}
+						}
+						assignedDates[best][dateStr] = true
+						if assignedNA[dateStr] == nil {
+							assignedNA[dateStr] = map[string]struct {
+								n int
+								a int
+							}{}
+						}
+						got = assignedNA[dateStr][shId]
+						if role == "assistant" {
+							got.a++
+						} else {
+							got.n++
+						}
+						assignedNA[dateStr][shId] = got
+						deficit--
+					}
 				}
 			}
 		}
-	}
-	tryFill("nurse", nurses)
-	tryFill("assistant", assistants)
+		tryFill("nurse", nurses)
+		tryFill("assistant", assistants)
 	*/ // End of old algorithm comment
 	if err := h.repo.BulkInsertAssignmentsStaff(c.Context(), items); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"status": "error", "message": err.Error()})

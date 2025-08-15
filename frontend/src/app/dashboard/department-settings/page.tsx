@@ -479,7 +479,7 @@ export default function DepartmentSettingsPage() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => handleDeleteHoliday(holiday.id, holiday.name)}
+                        onClick={() => handleDeleteHoliday(Number(holiday.id), holiday.name)}
                         className="text-red-600 hover:text-red-700"
                       >
                         <TrashIcon className="w-4 h-4" />

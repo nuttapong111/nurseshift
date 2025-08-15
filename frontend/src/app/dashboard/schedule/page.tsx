@@ -15,7 +15,11 @@ import {
   CheckIcon,
   MinusIcon,
   PencilIcon,
-  EyeIcon
+  EyeIcon,
+  XMarkIcon,
+  UserIcon,
+  MinusCircleIcon,
+  PlusCircleIcon
 } from '@heroicons/react/24/outline'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -118,6 +122,18 @@ export default function SchedulePage() {
 
   useEffect(() => { setMounted(true) }, [])
   const [showReduceModal, setShowReduceModal] = useState(false)
+  const [showEditShiftModal, setShowEditShiftModal] = useState(false)
+  const [editingShift, setEditingShift] = useState<{
+    date: string
+    shiftId: string
+    shiftName: string
+    startTime: string
+    endTime: string
+    nurses: Employee[]
+    assistants: Employee[]
+    requiredNurses: number
+    requiredAssistants: number
+  } | null>(null)
   const [reduceForm, setReduceForm] = useState({
     date: '',
     shift: '',
@@ -1239,6 +1255,25 @@ export default function SchedulePage() {
     return { rows, shiftIds, shiftIdToName }
   }
 
+  const handleEditShift = (date: string, shiftId: string) => {
+    const daySchedule = schedules[date]
+    if (!daySchedule?.shifts?.[shiftId]) return
+
+    const shift = daySchedule.shifts[shiftId]
+    setEditingShift({
+      date,
+      shiftId,
+      shiftName: shift.name || '',
+      startTime: shift.startTime || '',
+      endTime: shift.endTime || '',
+      nurses: shift.nurses || [],
+      assistants: shift.assistants || [],
+      requiredNurses: shift.requiredNurses || 0,
+      requiredAssistants: shift.requiredAssistants || 0
+    })
+    setShowEditShiftModal(true)
+  }
+
   const handleReduceStaff = async () => {
     setShowReduceModal(true)
   }
@@ -1521,7 +1556,7 @@ export default function SchedulePage() {
                   title="ส่งออก PDF รองรับภาษาไทย"
                 >
                   <DocumentArrowDownIcon className="w-4 h-4 mr-1" />
-                  PDF (ไทย)
+                  PDF 
                 </Button>
                 <Button
                   onClick={exportSummaryToExcel}
@@ -1609,7 +1644,7 @@ export default function SchedulePage() {
                   title="ส่งออก PDF ตารางเวรรองรับภาษาไทย"
                 >
                   <DocumentArrowDownIcon className="w-4 h-4 mr-1" />
-                  PDF (ไทย)
+                  PDF 
                 </Button>
                 <Button
                   onClick={exportCalendarToExcel}
@@ -1676,9 +1711,18 @@ export default function SchedulePage() {
                               <div key={shiftId} className={`text-xs p-1 rounded ${shiftData.color || ''}`}>
                                 <div className="flex items-center justify-between">
                                   <span className="font-medium">{shiftData.name || shiftTypes.find(s=>s.id===shiftId)?.name || 'เวร'}</span>
+                                  <div className="flex items-center space-x-2">
                                   {(shiftData.startTime || shiftData.endTime) && (
                                     <span className="text-[10px] text-gray-600">{shiftData.startTime} - {shiftData.endTime}</span>
                                   )}
+                                    <button 
+                                      onClick={() => handleEditShift(dateKey, shiftId)}
+                                      className="p-1 hover:bg-gray-100 rounded"
+                                      title="แก้ไขเวร"
+                                    >
+                                      <PencilIcon className="w-3 h-3 text-gray-600" />
+                                    </button>
+                                  </div>
                                 </div>
                                 <div>พยาบาล: {shiftData.nurses.length} คน{shiftData.nurses.length>0 && ` — ${shiftData.nurses.map(n=>n.name).join(', ')}`}</div>
                                 <div>ผู้ช่วย: {shiftData.assistants.length} คน{shiftData.assistants.length>0 && ` — ${shiftData.assistants.map(a=>a.name).join(', ')}`}</div>
@@ -1762,6 +1806,176 @@ export default function SchedulePage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Edit Shift Modal */}
+        {showEditShiftModal && editingShift && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-xl shadow-2xl p-6 max-w-6xl w-full">
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h3 className="text-2xl font-semibold text-gray-800">แก้ไขเวร {editingShift.shiftName}</h3>
+                  <p className="text-gray-600 mt-1">
+                    วันที่: {editingShift.date} | เวลา: {editingShift.startTime} - {editingShift.endTime}
+                  </p>
+                </div>
+                <button 
+                  onClick={() => setShowEditShiftModal(false)}
+                  className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                >
+                  <XMarkIcon className="w-6 h-6 text-gray-500" />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-6">
+                {/* Left Column - Current Staff */}
+                <div className="space-y-6">
+                  {/* Current Nurses Card */}
+                  <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
+                    <div className="flex items-center justify-between mb-4">
+                      <h4 className="text-lg font-medium text-blue-900">
+                        พยาบาลที่ขึ้นเวร
+                        <span className="ml-2 text-sm text-blue-600">
+                          ({editingShift.nurses.length}/{editingShift.requiredNurses} คน)
+                        </span>
+                      </h4>
+                    </div>
+                    <div className="space-y-2">
+                      {editingShift.nurses.map((nurse, idx) => (
+                        <div key={idx} className="flex items-center justify-between bg-white p-3 rounded-lg shadow-sm border border-blue-100">
+                          <div className="flex items-center space-x-3">
+                            <UserIcon className="w-5 h-5 text-blue-500" />
+                            <span className="text-gray-700">{nurse.name}</span>
+                          </div>
+                          <button 
+                            onClick={() => {
+                              // TODO: Remove nurse
+                            }}
+                            className="p-1.5 hover:bg-red-50 rounded-full text-red-500 transition-colors"
+                            title="นำออกจากเวร"
+                          >
+                            <MinusCircleIcon className="w-5 h-5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Current Assistants Card */}
+                  <div className="bg-green-50 rounded-xl p-4 border border-green-100">
+                    <div className="flex items-center justify-between mb-4">
+                      <h4 className="text-lg font-medium text-green-900">
+                        ผู้ช่วยพยาบาลที่ขึ้นเวร
+                        <span className="ml-2 text-sm text-green-600">
+                          ({editingShift.assistants.length}/{editingShift.requiredAssistants} คน)
+                        </span>
+                      </h4>
+                    </div>
+                    <div className="space-y-2">
+                      {editingShift.assistants.map((assistant, idx) => (
+                        <div key={idx} className="flex items-center justify-between bg-white p-3 rounded-lg shadow-sm border border-green-100">
+                          <div className="flex items-center space-x-3">
+                            <UserIcon className="w-5 h-5 text-green-500" />
+                            <span className="text-gray-700">{assistant.name}</span>
+                          </div>
+                          <button 
+                            onClick={() => {
+                              // TODO: Remove assistant
+                            }}
+                            className="p-1.5 hover:bg-red-50 rounded-full text-red-500 transition-colors"
+                            title="นำออกจากเวร"
+                          >
+                            <MinusCircleIcon className="w-5 h-5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right Column - Available Staff */}
+                <div className="space-y-6">
+                  {/* Available Nurses Card */}
+                  <div className="bg-indigo-50 rounded-xl p-4 border border-indigo-100">
+                    <div className="flex items-center justify-between mb-4">
+                      <h4 className="text-lg font-medium text-indigo-900">พยาบาลที่สามารถขึ้นเวรได้</h4>
+                    </div>
+                    <div className="space-y-2">
+                      {employees
+                        .filter(emp => emp.position === 'nurse' && 
+                          !editingShift.nurses.some(n => n.id === emp.id))
+                        .map((nurse, idx) => (
+                          <div key={idx} className="flex items-center justify-between bg-white p-3 rounded-lg shadow-sm border border-indigo-100">
+                            <div className="flex items-center space-x-3">
+                              <UserIcon className="w-5 h-5 text-indigo-500" />
+                              <span className="text-gray-700">{nurse.name}</span>
+                            </div>
+                            <button 
+                              onClick={() => {
+                                // TODO: Add nurse
+                              }}
+                              className="p-1.5 hover:bg-indigo-100 rounded-full text-indigo-600 transition-colors"
+                              title="เพิ่มเข้าเวร"
+                            >
+                              <PlusCircleIcon className="w-5 h-5" />
+                            </button>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+
+                  {/* Available Assistants Card */}
+                  <div className="bg-purple-50 rounded-xl p-4 border border-purple-100">
+                    <div className="flex items-center justify-between mb-4">
+                      <h4 className="text-lg font-medium text-purple-900">ผู้ช่วยพยาบาลที่สามารถขึ้นเวรได้</h4>
+                    </div>
+                    <div className="space-y-2">
+                      {employees
+                        .filter(emp => emp.position === 'assistant' && 
+                          !editingShift.assistants.some(a => a.id === emp.id))
+                        .map((assistant, idx) => (
+                          <div key={idx} className="flex items-center justify-between bg-white p-3 rounded-lg shadow-sm border border-purple-100">
+                            <div className="flex items-center space-x-3">
+                              <UserIcon className="w-5 h-5 text-purple-500" />
+                              <span className="text-gray-700">{assistant.name}</span>
+                            </div>
+                            <button 
+                              onClick={() => {
+                                // TODO: Add assistant
+                              }}
+                              className="p-1.5 hover:bg-purple-100 rounded-full text-purple-600 transition-colors"
+                              title="เพิ่มเข้าเวร"
+                            >
+                              <PlusCircleIcon className="w-5 h-5" />
+                            </button>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-8 flex justify-end space-x-3">
+                <Button 
+                  variant="outline" 
+                  onClick={() => setShowEditShiftModal(false)}
+                  className="px-6"
+                >
+                  ยกเลิก
+                </Button>
+                <Button 
+                  onClick={() => {
+                    // TODO: Save changes
+                    setShowEditShiftModal(false)
+                  }}
+                  className="px-6 bg-blue-600 hover:bg-blue-700"
+                >
+                  <CheckIcon className="w-5 h-5 mr-2" />
+                  บันทึก
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Reduce Staff Modal */}
         {showReduceModal && (
