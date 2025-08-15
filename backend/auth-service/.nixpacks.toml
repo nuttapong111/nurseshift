@@ -1,0 +1,11 @@
+# Nixpacks configuration for Railway
+[phases.setup]
+providers = ["go"]
+
+[phases.build]
+cmds = [
+  "CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o server ./cmd/server"
+]
+
+[start]
+cmd = "./server"

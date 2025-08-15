@@ -55,15 +55,18 @@ func main() {
 		time.Duration(cfg.Security.SessionTimeoutMins)*time.Minute,
 	)
 
-	// Test database connection by getting user by email
-	testEmail := "admin@nurseshift.com"
-	user, err := userRepo.GetByEmail(context.Background(), testEmail)
-	if err != nil {
-		log.Fatalf("Failed to get user by email: %v", err)
+	// In development, try to fetch a known user just to verify DB wiring.
+	// In production, skip to avoid fatal crash if seed data doesn't exist yet.
+	if cfg.IsDevelopment() {
+		testEmail := "admin@nurseshift.com"
+		user, err := userRepo.GetByEmail(context.Background(), testEmail)
+		if err != nil {
+			log.Printf("[DEV] Skipping test user fetch: %v", err)
+		} else {
+			fmt.Printf("✅ Database connection test successful! Found user: %s %s (%s)\n",
+				user.FirstName, user.LastName, user.Role)
+		}
 	}
-
-	fmt.Printf("✅ Database connection test successful! Found user: %s %s (%s)\n",
-		user.FirstName, user.LastName, user.Role)
 
 	// Initialize HTTP server
 	server := httpServer.NewServer(cfg, authUseCase, jwtService, cfg.JWT.Secret)
