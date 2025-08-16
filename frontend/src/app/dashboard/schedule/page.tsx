@@ -1857,7 +1857,12 @@ export default function SchedulePage() {
                           </div>
                           <button 
                             onClick={() => {
-                              // TODO: Remove nurse
+                              if (editingShift) {
+                                setEditingShift({
+                                  ...editingShift,
+                                  nurses: editingShift.nurses.filter((_, i) => i !== idx)
+                                })
+                              }
                             }}
                             className="p-1.5 hover:bg-red-50 rounded-full text-red-500 transition-colors"
                             title="นำออกจากเวร"
@@ -1888,7 +1893,12 @@ export default function SchedulePage() {
                           </div>
                           <button 
                             onClick={() => {
-                              // TODO: Remove assistant
+                              if (editingShift) {
+                                setEditingShift({
+                                  ...editingShift,
+                                  assistants: editingShift.assistants.filter((_, i) => i !== idx)
+                                })
+                              }
                             }}
                             className="p-1.5 hover:bg-red-50 rounded-full text-red-500 transition-colors"
                             title="นำออกจากเวร"
@@ -1919,9 +1929,14 @@ export default function SchedulePage() {
                               <span className="text-gray-700">{nurse.name}</span>
                             </div>
                             <button 
-                              onClick={() => {
-                                // TODO: Add nurse
-                              }}
+                                                          onClick={() => {
+                              if (editingShift) {
+                                setEditingShift({
+                                  ...editingShift,
+                                  nurses: [...editingShift.nurses, nurse]
+                                })
+                              }
+                            }}
                               className="p-1.5 hover:bg-indigo-100 rounded-full text-indigo-600 transition-colors"
                               title="เพิ่มเข้าเวร"
                             >
@@ -1948,9 +1963,14 @@ export default function SchedulePage() {
                               <span className="text-gray-700">{assistant.name}</span>
                             </div>
                             <button 
-                              onClick={() => {
-                                // TODO: Add assistant
-                              }}
+                                                          onClick={() => {
+                              if (editingShift) {
+                                setEditingShift({
+                                  ...editingShift,
+                                  assistants: [...editingShift.assistants, assistant]
+                                })
+                              }
+                            }}
                               className="p-1.5 hover:bg-purple-100 rounded-full text-purple-600 transition-colors"
                               title="เพิ่มเข้าเวร"
                             >
