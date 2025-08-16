@@ -74,6 +74,7 @@ func main() {
 		schedules.Get("/shifts", scheduleHandler.ListShifts)
 		schedules.Get("/available-staff", scheduleHandler.GetAvailableStaff)
 		schedules.Post("/edit-shift", scheduleHandler.EditShift)
+		schedules.Post("/check-overlap", scheduleHandler.CheckShiftOverlap)
 		schedules.Post("/optimize-generate", scheduleHandler.OptimizeGenerate)
 		schedules.Get("/:id", scheduleHandler.GetSchedule)
 		schedules.Put("/:id", scheduleHandler.UpdateSchedule)

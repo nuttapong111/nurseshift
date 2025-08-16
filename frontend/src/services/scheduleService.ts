@@ -96,10 +96,8 @@ class ScheduleService {
     departmentId: string
     date: string
     shiftId: string
-    addNurses: string[]
-    addAssistants: string[]
-    removeNurses: string[]
-    removeAssistants: string[]
+    nurses: string[]
+    assistants: string[]
   }): Promise<void> {
     const res = await fetch(`${API_BASE_URL}/api/v1/schedules/edit-shift`, {
       method: 'POST',

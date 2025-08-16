@@ -445,7 +445,7 @@ func (r *ScheduleRepository) DeleteAssignmentByStaffAndShift(ctx context.Context
 		DELETE FROM %s 
 		WHERE staff_id = $1 AND shift_id = $2 AND schedule_date = $3
 	`, r.table())
-	
+
 	_, err := r.conn.DB.ExecContext(ctx, query, staffID, shiftID, date)
 	return err
 }

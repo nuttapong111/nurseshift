@@ -6,6 +6,7 @@ import (
 
 	"nurseshift/employee-leave-service/internal/domain/entities"
 	"nurseshift/employee-leave-service/internal/domain/usecases"
+	"nurseshift/employee-leave-service/internal/infrastructure/database"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
@@ -14,12 +15,14 @@ import (
 // LeaveHandler handles leave request HTTP requests
 type LeaveHandler struct {
 	leaveUseCase usecases.LeaveUseCase
+	db           *database.Connection
 }
 
 // NewLeaveHandler creates a new leave handler
-func NewLeaveHandler(leaveUseCase usecases.LeaveUseCase) *LeaveHandler {
+func NewLeaveHandler(leaveUseCase usecases.LeaveUseCase, db *database.Connection) *LeaveHandler {
 	return &LeaveHandler{
 		leaveUseCase: leaveUseCase,
+		db:           db,
 	}
 }
 
@@ -339,9 +342,21 @@ func (h *LeaveHandler) ToggleLeave(c *fiber.Ctx) error {
 
 // Health returns service health status
 func (h *LeaveHandler) Health(c *fiber.Ctx) error {
+	// Check database connection
+	if err := h.db.GetDB().Ping(); err != nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+			"status":    "error",
+			"service":   "employee-leave-service",
+			"message":   "Database connection failed",
+			"error":     err.Error(),
+			"timestamp": time.Now(),
+		})
+	}
+
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"status":    "ok",
 		"service":   "employee-leave-service",
+		"message":   "Service and database healthy",
 		"timestamp": time.Now(),
 	})
 }

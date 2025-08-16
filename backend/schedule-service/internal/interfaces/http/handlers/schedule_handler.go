@@ -1207,13 +1207,11 @@ func extractJSON(s string) string {
 // EditShift handles editing staff assignments for a specific shift
 func (h *ScheduleHandler) EditShift(c *fiber.Ctx) error {
 	var req struct {
-		Date             string   `json:"date"`
-		ShiftID          string   `json:"shiftId"`
-		DepartmentID     string   `json:"departmentId"`
-		AddNurses        []string `json:"addNurses"`
-		AddAssistants    []string `json:"addAssistants"`
-		RemoveNurses     []string `json:"removeNurses"`
-		RemoveAssistants []string `json:"removeAssistants"`
+		Date         string   `json:"date"`
+		ShiftID      string   `json:"shiftId"`
+		DepartmentID string   `json:"departmentId"`
+		Nurses       []string `json:"nurses"`
+		Assistants   []string `json:"assistants"`
 	}
 
 	if err := c.BodyParser(&req); err != nil {
@@ -1230,21 +1228,30 @@ func (h *ScheduleHandler) EditShift(c *fiber.Ctx) error {
 		})
 	}
 
-	// Remove staff from shift
-	if len(req.RemoveNurses) > 0 || len(req.RemoveAssistants) > 0 {
-		removeIDs := append(req.RemoveNurses, req.RemoveAssistants...)
-		for _, staffID := range removeIDs {
-			if err := h.repo.DeleteAssignmentByStaffAndShift(c.Context(), staffID, req.ShiftID, req.Date); err != nil {
-				log.Printf("Error removing staff %s: %v", staffID, err)
+	// Simple approach: replace all staff for this shift
+	// First, remove all existing assignments for this shift
+	existingAssignments, err := h.repo.ListAssignmentsWithShiftForDate(c.Context(), req.DepartmentID, req.Date)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"status":  "error",
+			"message": "ไม่สามารถดึงข้อมูลเวรปัจจุบันได้: " + err.Error(),
+		})
+	}
+
+	// Remove existing assignments for this shift
+	for _, assignment := range existingAssignments {
+		if assignment.ShiftID == req.ShiftID {
+			if err := h.repo.DeleteAssignmentByStaffAndShift(c.Context(), assignment.StaffID, req.ShiftID, req.Date); err != nil {
+				log.Printf("Error removing existing assignment: %v", err)
 			}
 		}
 	}
 
-	// Add staff to shift
+	// Create new assignments
 	var newAssignments []database.Assignment
 
 	// Add nurses
-	for _, nurseID := range req.AddNurses {
+	for _, nurseID := range req.Nurses {
 		newAssignments = append(newAssignments, database.Assignment{
 			ID:           uuid.New().String(),
 			DepartmentID: req.DepartmentID,
@@ -1256,7 +1263,7 @@ func (h *ScheduleHandler) EditShift(c *fiber.Ctx) error {
 	}
 
 	// Add assistants
-	for _, assistantID := range req.AddAssistants {
+	for _, assistantID := range req.Assistants {
 		newAssignments = append(newAssignments, database.Assignment{
 			ID:           uuid.New().String(),
 			DepartmentID: req.DepartmentID,
@@ -1282,7 +1289,59 @@ func (h *ScheduleHandler) EditShift(c *fiber.Ctx) error {
 		"message": "แก้ไขเวรสำเร็จ",
 		"data": fiber.Map{
 			"added":   len(newAssignments),
-			"removed": len(req.RemoveNurses) + len(req.RemoveAssistants),
+			"removed": 0, // Will calculate based on current vs new staff
 		},
+	})
+}
+
+// CheckShiftOverlap checks if a staff member can be assigned to a specific shift
+func (h *ScheduleHandler) CheckShiftOverlap(c *fiber.Ctx) error {
+	var req struct {
+		DepartmentID string `json:"departmentId"`
+		Date         string `json:"date"`
+		ShiftID      string `json:"shiftId"`
+		StaffID      string `json:"staffId"`
+	}
+
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "error",
+			"message": "ข้อมูลไม่ถูกต้อง",
+		})
+	}
+
+	if req.DepartmentID == "" || req.Date == "" || req.ShiftID == "" || req.StaffID == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "error",
+			"message": "ต้องระบุ departmentId, date, shiftId และ staffId",
+		})
+	}
+
+	// Check if staff is already assigned to this shift
+	existingAssignments, err := h.repo.ListAssignmentsWithShiftForDate(c.Context(), req.DepartmentID, req.Date)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"status":  "error",
+			"message": "ไม่สามารถตรวจสอบการมอบหมายได้: " + err.Error(),
+		})
+	}
+
+	// Check if staff is already assigned to this shift
+	for _, assignment := range existingAssignments {
+		if assignment.StaffID == req.StaffID && assignment.ShiftID == req.ShiftID {
+			return c.Status(fiber.StatusOK).JSON(fiber.Map{
+				"status":    "success",
+				"canAssign": false,
+				"message":   "พนักงานถูกมอบหมายให้เวรนี้แล้ว",
+			})
+		}
+	}
+
+	// For now, assume staff can be assigned (no time overlap check implemented)
+	// TODO: Implement time overlap check with other shifts
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"status":    "success",
+		"canAssign": true,
+		"message":   "สามารถมอบหมายได้",
 	})
 }

@@ -1929,14 +1929,17 @@ export default function SchedulePage() {
                               <span className="text-gray-700">{nurse.name}</span>
                             </div>
                             <button 
-                                                          onClick={() => {
-                              if (editingShift) {
-                                setEditingShift({
-                                  ...editingShift,
-                                  nurses: [...editingShift.nurses, nurse]
-                                })
-                              }
-                            }}
+                              onClick={() => {
+                                if (editingShift) {
+                                  console.log('🔍 DEBUG - Before adding nurse:', editingShift.nurses.length, editingShift.nurses)
+                                  const newNurses = [...editingShift.nurses, nurse]
+                                  console.log('🔍 DEBUG - After adding nurse:', newNurses.length, newNurses)
+                                  setEditingShift({
+                                    ...editingShift,
+                                    nurses: newNurses
+                                  })
+                                }
+                              }}
                               className="p-1.5 hover:bg-indigo-100 rounded-full text-indigo-600 transition-colors"
                               title="เพิ่มเข้าเวร"
                             >
@@ -1962,15 +1965,18 @@ export default function SchedulePage() {
                               <UserIcon className="w-5 h-5 text-purple-500" />
                               <span className="text-gray-700">{assistant.name}</span>
                             </div>
-                            <button 
-                                                          onClick={() => {
-                              if (editingShift) {
-                                setEditingShift({
-                                  ...editingShift,
-                                  assistants: [...editingShift.assistants, assistant]
-                                })
-                              }
-                            }}
+                                                        <button 
+                              onClick={() => {
+                                if (editingShift) {
+                                  console.log('🔍 DEBUG - Before adding assistant:', editingShift.assistants.length, editingShift.assistants)
+                                  const newAssistants = [...editingShift.assistants, assistant]
+                                  console.log('🔍 DEBUG - After adding assistant:', newAssistants.length, newAssistants)
+                                  setEditingShift({
+                                    ...editingShift,
+                                    assistants: newAssistants
+                                  })
+                                }
+                              }}
                               className="p-1.5 hover:bg-purple-100 rounded-full text-purple-600 transition-colors"
                               title="เพิ่มเข้าเวร"
                             >
@@ -2010,6 +2016,9 @@ export default function SchedulePage() {
                         throw new Error('ไม่พบข้อมูลเวรเดิม')
                       }
 
+                      console.log('🔍 DEBUG - Original Shift:', originalShift)
+                      console.log('🔍 DEBUG - Editing Shift:', editingShift)
+
                       const originalNurseIds = originalShift.nurses.map(n => String(n.id))
                       const originalAssistantIds = originalShift.assistants.map(a => String(a.id))
 
@@ -2017,51 +2026,32 @@ export default function SchedulePage() {
                       const currentNurseIds = editingShift.nurses.map(n => String(n.id))
                       const currentAssistantIds = editingShift.assistants.map(a => String(a.id))
 
-                      // Calculate differences
+                      console.log('🔍 DEBUG - Original Nurse IDs:', originalNurseIds)
+                      console.log('🔍 DEBUG - Current Nurse IDs:', currentNurseIds)
+                      console.log('🔍 DEBUG - Original Assistant IDs:', originalAssistantIds)
+                      console.log('🔍 DEBUG - Current Assistant IDs:', currentAssistantIds)
+
+                      // Calculate differences - simple logic: add what's new, remove what's gone
                       const addNurses = currentNurseIds.filter(id => !originalNurseIds.includes(id))
                       const removeNurses = originalNurseIds.filter(id => !currentNurseIds.includes(id))
                       const addAssistants = currentAssistantIds.filter(id => !originalAssistantIds.includes(id))
                       const removeAssistants = originalAssistantIds.filter(id => !currentAssistantIds.includes(id))
 
-                      // Check overlap for staff to be added
-                      const checkOverlap = async (staffId: string) => {
-                        try {
-                          const result = await scheduleService.checkShiftOverlap({
-                            departmentId: selectedDepartment,
-                            date: editingShift.date,
-                            shiftId: editingShift.shiftId,
-                            staffId
-                          })
-                          return result.canAssign
-                        } catch (error) {
-                          console.error('Error checking overlap:', error)
-                          return false
-                        }
-                      }
+                      console.log('🔍 DEBUG - Add Nurses:', addNurses)
+                      console.log('🔍 DEBUG - Remove Nurses:', removeNurses)
+                      console.log('🔍 DEBUG - Add Assistants:', addAssistants)
+                      console.log('🔍 DEBUG - Remove Assistants:', removeAssistants)
 
-                      // Filter out staff with overlapping shifts
-                      const addableNurses = await Promise.all(
-                        addNurses.map(async id => ({
-                          id,
-                          canAdd: await checkOverlap(id)
-                        }))
-                      )
-                      const addableAssistants = await Promise.all(
-                        addAssistants.map(async id => ({
-                          id,
-                          canAdd: await checkOverlap(id)
-                        }))
-                      )
+                      // No need to check overlap - API available-staff already filtered valid staff
+                      // Head nurse can add/remove staff as needed (flexible management)
 
-                      // Edit shift
+                      // Edit shift - send final staff list (like CreateSchedule format)
                       await scheduleService.editShift({
                         departmentId: selectedDepartment,
                         date: editingShift.date,
                         shiftId: editingShift.shiftId,
-                        addNurses: addableNurses.filter(n => n.canAdd).map(n => n.id),
-                        addAssistants: addableAssistants.filter(a => a.canAdd).map(a => a.id),
-                        removeNurses: removeNurses,
-                        removeAssistants: removeAssistants
+                        nurses: editingShift.nurses.map(n => String(n.id)),
+                        assistants: editingShift.assistants.map(a => String(a.id))
                       })
 
                       // Refresh data

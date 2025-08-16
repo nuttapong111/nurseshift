@@ -37,6 +37,12 @@ func main() {
 	}
 	defer dbConn.Close()
 
+	// Test database connection
+	if err := dbConn.GetDB().Ping(); err != nil {
+		log.Fatalf("Database ping failed: %v", err)
+	}
+	log.Println("✅ Database connection verified")
+
 	// Get schema from environment
 	schema := os.Getenv("DB_SCHEMA")
 	if schema == "" {
@@ -50,7 +56,7 @@ func main() {
 	leaveUseCase := usecases.NewLeaveUseCase(leaveRepo)
 
 	// Initialize handler
-	leaveHandler := handlers.NewLeaveHandler(leaveUseCase)
+	leaveHandler := handlers.NewLeaveHandler(leaveUseCase, dbConn)
 
 	// Create Fiber app
 	app := fiber.New(fiber.Config{
@@ -77,18 +83,26 @@ func main() {
 	// Setup routes
 	routes.SetupRoutes(app, leaveHandler)
 
-	// Get port from environment
+	// Get port from environment (Railway requires PORT env var)
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "8088"
+		port = "8080"
 	}
+
+	// Log port configuration
+	log.Printf("🚀 Service will bind to port: %s", port)
 
 	fmt.Printf("Starting Employee Leave Service on port %s...\n", port)
 
 	// Start server
 	go func() {
-		fmt.Printf("🚀 Employee Leave Service running on http://localhost:%s\n", port)
-		if err := app.Listen(":" + port); err != nil {
+		// Small delay to ensure everything is ready
+		time.Sleep(100 * time.Millisecond)
+
+		fmt.Printf("🚀 Employee Leave Service running on http://0.0.0.0:%s\n", port)
+		log.Printf("✅ Service is ready to accept connections")
+
+		if err := app.Listen("0.0.0.0:" + port); err != nil {
 			log.Printf("Failed to start server: %v", err)
 		}
 	}()
@@ -97,6 +111,15 @@ func main() {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	<-c
+
+	fmt.Println("\n🛑 Shutting down Employee Leave Service...")
+
+	// Graceful shutdown
+	if err := app.Shutdown(); err != nil {
+		log.Printf("Error during shutdown: %v", err)
+	}
+
+	fmt.Println("✅ Employee Leave Service stopped gracefully")
 
 	fmt.Println("\n🛑 Shutting down Employee Leave Service...")
 	app.Shutdown()
