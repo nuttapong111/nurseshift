@@ -2003,40 +2003,51 @@ export default function SchedulePage() {
                         allowEscapeKey: false
                       })
 
-                      // Get current staff IDs
+                      // Get original staff IDs from the shift data
+                      const originalShift = schedules[editingShift.date]?.shifts[editingShift.shiftId]
+                      
+                      if (!originalShift) {
+                        throw new Error('ไม่พบข้อมูลเวรเดิม')
+                      }
+
+                      const originalNurseIds = originalShift.nurses.map(n => String(n.id))
+                      const originalAssistantIds = originalShift.assistants.map(a => String(a.id))
+
+                      // Get current staff IDs from editing state
                       const currentNurseIds = editingShift.nurses.map(n => String(n.id))
                       const currentAssistantIds = editingShift.assistants.map(a => String(a.id))
 
-                      // Get available staff IDs
-                      const availableNurseIds = employees
-                        .filter(emp => emp.position === 'nurse' && 
-                          !editingShift.nurses.some(n => n.id === emp.id))
-                        .map(n => String(n.id))
-                      const availableAssistantIds = employees
-                        .filter(emp => emp.position === 'assistant' && 
-                          !editingShift.assistants.some(a => a.id === emp.id))
-                        .map(a => String(a.id))
+                      // Calculate differences
+                      const addNurses = currentNurseIds.filter(id => !originalNurseIds.includes(id))
+                      const removeNurses = originalNurseIds.filter(id => !currentNurseIds.includes(id))
+                      const addAssistants = currentAssistantIds.filter(id => !originalAssistantIds.includes(id))
+                      const removeAssistants = originalAssistantIds.filter(id => !currentAssistantIds.includes(id))
 
-                      // Check overlap for each staff to be added
+                      // Check overlap for staff to be added
                       const checkOverlap = async (staffId: string) => {
-                        const result = await scheduleService.checkShiftOverlap({
-                          departmentId: selectedDepartment,
-                          date: editingShift.date,
-                          shiftId: editingShift.shiftId,
-                          staffId
-                        })
-                        return result.canAssign
+                        try {
+                          const result = await scheduleService.checkShiftOverlap({
+                            departmentId: selectedDepartment,
+                            date: editingShift.date,
+                            shiftId: editingShift.shiftId,
+                            staffId
+                          })
+                          return result.canAssign
+                        } catch (error) {
+                          console.error('Error checking overlap:', error)
+                          return false
+                        }
                       }
 
                       // Filter out staff with overlapping shifts
                       const addableNurses = await Promise.all(
-                        availableNurseIds.map(async id => ({
+                        addNurses.map(async id => ({
                           id,
                           canAdd: await checkOverlap(id)
                         }))
                       )
                       const addableAssistants = await Promise.all(
-                        availableAssistantIds.map(async id => ({
+                        addAssistants.map(async id => ({
                           id,
                           canAdd: await checkOverlap(id)
                         }))
@@ -2049,8 +2060,8 @@ export default function SchedulePage() {
                         shiftId: editingShift.shiftId,
                         addNurses: addableNurses.filter(n => n.canAdd).map(n => n.id),
                         addAssistants: addableAssistants.filter(a => a.canAdd).map(a => a.id),
-                        removeNurses: currentNurseIds,
-                        removeAssistants: currentAssistantIds
+                        removeNurses: removeNurses,
+                        removeAssistants: removeAssistants
                       })
 
                       // Refresh data

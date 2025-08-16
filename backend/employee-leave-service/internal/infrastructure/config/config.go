@@ -33,8 +33,8 @@ type DatabaseConfig struct {
 
 // AuthConfig holds authentication configuration
 type AuthConfig struct {
-	ServiceURL string
-	JWTSecret  string
+	ServiceURL  string
+	JWTSecret   string
 	ExpireHours int
 }
 
