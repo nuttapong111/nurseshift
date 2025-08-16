@@ -1207,12 +1207,12 @@ func extractJSON(s string) string {
 // EditShift handles editing staff assignments for a specific shift
 func (h *ScheduleHandler) EditShift(c *fiber.Ctx) error {
 	var req struct {
-		Date           string   `json:"date"`
-		ShiftID        string   `json:"shiftId"`
-		DepartmentID   string   `json:"departmentId"`
-		AddNurses      []string `json:"addNurses"`
-		AddAssistants  []string `json:"addAssistants"`
-		RemoveNurses   []string `json:"removeNurses"`
+		Date             string   `json:"date"`
+		ShiftID          string   `json:"shiftId"`
+		DepartmentID     string   `json:"departmentId"`
+		AddNurses        []string `json:"addNurses"`
+		AddAssistants    []string `json:"addAssistants"`
+		RemoveNurses     []string `json:"removeNurses"`
 		RemoveAssistants []string `json:"removeAssistants"`
 	}
 
@@ -1281,8 +1281,8 @@ func (h *ScheduleHandler) EditShift(c *fiber.Ctx) error {
 		"status":  "success",
 		"message": "แก้ไขเวรสำเร็จ",
 		"data": fiber.Map{
-			"added":     len(newAssignments),
-			"removed":   len(req.RemoveNurses) + len(req.RemoveAssistants),
+			"added":   len(newAssignments),
+			"removed": len(req.RemoveNurses) + len(req.RemoveAssistants),
 		},
 	})
 }
