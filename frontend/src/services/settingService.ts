@@ -1,6 +1,7 @@
 import dayjs from 'dayjs'
 
-const SETTING_SERVICE_URL = process.env.NEXT_PUBLIC_SETTING_SERVICE_URL || 'http://localhost:8085'
+import { normalizeBaseUrl } from '@/lib/utils'
+const SETTING_SERVICE_URL = normalizeBaseUrl(process.env.NEXT_PUBLIC_SETTING_SERVICE_URL, 'http://localhost:8085')
 
 const getAuthToken = (): string | null => {
   if (typeof window !== 'undefined') {

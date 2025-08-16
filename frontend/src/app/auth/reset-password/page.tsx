@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import Swal from 'sweetalert2'
+import { normalizeBaseUrl } from '@/lib/utils'
 
 export default function ResetPasswordPage() {
 	return (
@@ -73,7 +74,7 @@ function ResetPasswordContent() {
 		setIsLoading(true)
 
 		try {
-			const response = await fetch(`${process.env.NEXT_PUBLIC_AUTH_SERVICE_URL}/api/v1/auth/reset-password`, {
+			const response = await fetch(`${normalizeBaseUrl(process.env.NEXT_PUBLIC_AUTH_SERVICE_URL)}/api/v1/auth/reset-password`, {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',

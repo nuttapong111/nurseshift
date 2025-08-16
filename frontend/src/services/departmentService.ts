@@ -1,6 +1,7 @@
 import { getAuthToken } from './userService'
+import { normalizeBaseUrl } from '@/lib/utils'
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_DEPARTMENT_SERVICE_URL || process.env.NEXT_PUBLIC_DEPARTMENT_API_URL || 'http://localhost:8083'
+const API_BASE_URL = normalizeBaseUrl(process.env.NEXT_PUBLIC_DEPARTMENT_SERVICE_URL || process.env.NEXT_PUBLIC_DEPARTMENT_API_URL, 'http://localhost:8083')
 
 export interface Department {
   id: string

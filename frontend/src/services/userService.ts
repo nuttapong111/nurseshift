@@ -6,7 +6,8 @@ import type {
   CheckEmailVerificationResponse 
 } from '@/types'
 
-const USER_SERVICE_URL = process.env.NEXT_PUBLIC_USER_SERVICE_URL || 'http://localhost:8082'
+import { normalizeBaseUrl } from '@/lib/utils'
+const USER_SERVICE_URL = normalizeBaseUrl(process.env.NEXT_PUBLIC_USER_SERVICE_URL, 'http://localhost:8082')
 
 // Helper function to get auth token
 export const getAuthToken = (): string | null => {

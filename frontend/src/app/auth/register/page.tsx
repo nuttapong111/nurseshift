@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { CalendarDaysIcon, EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline'
 import { Button } from '@/components/ui/Button'
+import { normalizeBaseUrl } from '@/lib/utils'
 import { ButtonGroup } from '@/components/ui/ButtonGroup'
 import { Input } from '@/components/ui/Input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
@@ -39,7 +40,7 @@ export default function RegisterPage() {
       }
 
       // Call real API
-      const response = await fetch(`${process.env.NEXT_PUBLIC_AUTH_SERVICE_URL}/api/v1/auth/register`, {
+      const response = await fetch(`${normalizeBaseUrl(process.env.NEXT_PUBLIC_AUTH_SERVICE_URL)}/api/v1/auth/register`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

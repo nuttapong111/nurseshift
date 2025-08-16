@@ -1,6 +1,7 @@
 import type { ApiResponse } from '@/types'
 
-const LEAVE_SERVICE_URL = process.env.NEXT_PUBLIC_EMPLOYEE_LEAVE_SERVICE_URL || 'http://localhost:8090'
+import { normalizeBaseUrl } from '@/lib/utils'
+const LEAVE_SERVICE_URL = normalizeBaseUrl(process.env.NEXT_PUBLIC_EMPLOYEE_LEAVE_SERVICE_URL, 'http://localhost:8090')
 
 export const getAuthToken = (): string | null => {
   if (typeof window !== 'undefined') {

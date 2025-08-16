@@ -9,6 +9,7 @@ import { ButtonGroup } from '@/components/ui/ButtonGroup'
 import { Input } from '@/components/ui/Input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import Swal from 'sweetalert2'
+import { normalizeBaseUrl } from '@/lib/utils'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -25,7 +26,7 @@ export default function LoginPage() {
 
     try {
       // Call real API
-      const response = await fetch(`${process.env.NEXT_PUBLIC_AUTH_SERVICE_URL}/api/v1/auth/login`, {
+      const response = await fetch(`${normalizeBaseUrl(process.env.NEXT_PUBLIC_AUTH_SERVICE_URL)}/api/v1/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -1,6 +1,7 @@
 import { getAuthToken } from './userService'
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_SCHEDULE_SERVICE_URL || process.env.NEXT_PUBLIC_SCHEDULE_API_URL || 'http://localhost:8084'
+import { normalizeBaseUrl } from '@/lib/utils'
+const API_BASE_URL = normalizeBaseUrl(process.env.NEXT_PUBLIC_SCHEDULE_SERVICE_URL || process.env.NEXT_PUBLIC_SCHEDULE_API_URL, 'http://localhost:8084')
 
 export interface ScheduleItem {
   id: string

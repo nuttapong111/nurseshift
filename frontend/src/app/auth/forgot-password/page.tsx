@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import Swal from 'sweetalert2'
+import { normalizeBaseUrl } from '@/lib/utils'
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('')
@@ -18,7 +19,7 @@ export default function ForgotPasswordPage() {
     setIsLoading(true)
 
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_AUTH_SERVICE_URL}/api/v1/auth/forgot-password`, {
+      const response = await fetch(`${normalizeBaseUrl(process.env.NEXT_PUBLIC_AUTH_SERVICE_URL)}/api/v1/auth/forgot-password`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -76,7 +77,7 @@ export default function ForgotPasswordPage() {
     setIsLoading(true)
     
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_AUTH_SERVICE_URL}/api/v1/auth/forgot-password`, {
+      const response = await fetch(`${normalizeBaseUrl(process.env.NEXT_PUBLIC_AUTH_SERVICE_URL)}/api/v1/auth/forgot-password`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

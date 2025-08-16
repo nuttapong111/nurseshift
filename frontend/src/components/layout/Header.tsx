@@ -21,6 +21,7 @@ import {
 import { Button } from '@/components/ui/Button'
 import { cn, getTimeRemaining } from '@/lib/utils'
 import Swal from 'sweetalert2'
+import { normalizeBaseUrl } from '@/lib/utils'
 import type { User } from '@/types'
 
 const navigation = [
@@ -92,7 +93,7 @@ export default function Header({ user }: HeaderProps) {
         // Call logout API
         const token = localStorage.getItem('token')
         if (token) {
-          await fetch(`${process.env.NEXT_PUBLIC_AUTH_SERVICE_URL}/api/v1/auth/logout`, {
+          await fetch(`${normalizeBaseUrl(process.env.NEXT_PUBLIC_AUTH_SERVICE_URL)}/api/v1/auth/logout`, {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${token}`,
