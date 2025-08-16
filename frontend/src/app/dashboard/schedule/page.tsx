@@ -86,19 +86,19 @@ const mockDepartments: { id: string; name: string; employees: Employee[] }[] = [
     id: 'emergency',
     name: 'แผนกฉุกเฉิน',
     employees: [
-      { id: 1, name: 'สมใจ ใจดี', position: 'พยาบาล', department: 'แผนกฉุกเฉิน', shiftCounts: { morning: 8, afternoon: 6, night: 4, total: 18 } },
-      { id: 2, name: 'วิไล รักษ์ดี', position: 'พยาบาล', department: 'แผนกฉุกเฉิน', shiftCounts: { morning: 7, afternoon: 5, night: 6, total: 18 } },
-      { id: 3, name: 'มณี ใสใส', position: 'ผู้ช่วยพยาบาล', department: 'แผนกฉุกเฉิน', shiftCounts: { morning: 6, afternoon: 7, night: 5, total: 18 } },
-      { id: 4, name: 'สุดา ขยันขัน', position: 'ผู้ช่วยพยาบาล', department: 'แผนกฉุกเฉิน', shiftCounts: { morning: 5, afternoon: 8, night: 5, total: 18 } }
+      { id: '1', name: 'สมใจ ใจดี', position: 'พยาบาล', department: 'แผนกฉุกเฉิน', shiftCounts: { morning: 8, afternoon: 6, night: 4, total: 18 } },
+      { id: '2', name: 'วิไล รักษ์ดี', position: 'พยาบาล', department: 'แผนกฉุกเฉิน', shiftCounts: { morning: 7, afternoon: 5, night: 6, total: 18 } },
+      { id: '3', name: 'มณี ใสใส', position: 'ผู้ช่วยพยาบาล', department: 'แผนกฉุกเฉิน', shiftCounts: { morning: 6, afternoon: 7, night: 5, total: 18 } },
+      { id: '4', name: 'สุดา ขยันขัน', position: 'ผู้ช่วยพยาบาล', department: 'แผนกฉุกเฉิน', shiftCounts: { morning: 5, afternoon: 8, night: 5, total: 18 } }
     ]
   },
   {
     id: 'internal',
     name: 'แผนกอายุรกรรม',
     employees: [
-      { id: 5, name: 'ประไพ แจ่มใส', position: 'พยาบาล', department: 'แผนกอายุรกรรม', shiftCounts: { morning: 9, afternoon: 5, night: 4, total: 18 } },
-      { id: 6, name: 'นิรมล สุขใจ', position: 'พยาบาล', department: 'แผนกอายุรกรรม', shiftCounts: { morning: 6, afternoon: 7, night: 5, total: 18 } },
-      { id: 7, name: 'บุปผา รื่นรมย์', position: 'ผู้ช่วยพยาบาล', department: 'แผนกอายุรกรรม', shiftCounts: { morning: 5, afternoon: 6, night: 7, total: 18 } }
+      { id: '5', name: 'ประไพ แจ่มใส', position: 'พยาบาล', department: 'แผนกอายุรกรรม', shiftCounts: { morning: 9, afternoon: 5, night: 4, total: 18 } },
+      { id: '6', name: 'นิรมล สุขใจ', position: 'พยาบาล', department: 'แผนกอายุรกรรม', shiftCounts: { morning: 6, afternoon: 7, night: 5, total: 18 } },
+      { id: '7', name: 'บุปผา รื่นรมย์', position: 'ผู้ช่วยพยาบาล', department: 'แผนกอายุรกรรม', shiftCounts: { morning: 5, afternoon: 6, night: 7, total: 18 } }
     ]
   }
 ]
