@@ -1487,7 +1487,7 @@ export default function SchedulePage() {
             </select>
             <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
               <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-2 w-full">
-                <Button onClick={handleReduceStaff} className="w-full sm:w-auto">ปรับลดพนักงาน</Button>
+                {/* <Button onClick={handleReduceStaff} className="w-full sm:w-auto">ปรับลดพนักงาน</Button>
                 <Button 
                   onClick={() => {
                     Swal.fire({
@@ -1501,7 +1501,7 @@ export default function SchedulePage() {
                 >
                   <PencilIcon className="w-4 h-4 mr-1" />
                   แก้ไขเวร
-                </Button>
+                </Button> */}
                 <Button 
                   onClick={handleAutoGenerateBackend} 
                   disabled={isGeneratingBackend || isGeneratingAI}
