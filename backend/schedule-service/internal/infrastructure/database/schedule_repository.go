@@ -439,6 +439,17 @@ func (r *ScheduleRepository) ListWithStaff(ctx context.Context, departmentID, mo
 	return out, rows.Err()
 }
 
+// DeleteAssignmentByStaffAndShift deletes an assignment for a specific staff member, shift, and date
+func (r *ScheduleRepository) DeleteAssignmentByStaffAndShift(ctx context.Context, staffID, shiftID, date string) error {
+	query := fmt.Sprintf(`
+		DELETE FROM %s 
+		WHERE staff_id = $1 AND shift_id = $2 AND schedule_date = $3
+	`, r.table())
+	
+	_, err := r.conn.DB.ExecContext(ctx, query, staffID, shiftID, date)
+	return err
+}
+
 // List schedules with role for aggregation
 func (r *ScheduleRepository) ListWithRole(ctx context.Context, departmentID, month string) ([]ScheduleWithRole, error) {
 	base := fmt.Sprintf(`

@@ -1203,3 +1203,86 @@ func extractJSON(s string) string {
 	}
 	return s
 }
+
+// EditShift handles editing staff assignments for a specific shift
+func (h *ScheduleHandler) EditShift(c *fiber.Ctx) error {
+	var req struct {
+		Date           string   `json:"date"`
+		ShiftID        string   `json:"shiftId"`
+		DepartmentID   string   `json:"departmentId"`
+		AddNurses      []string `json:"addNurses"`
+		AddAssistants  []string `json:"addAssistants"`
+		RemoveNurses   []string `json:"removeNurses"`
+		RemoveAssistants []string `json:"removeAssistants"`
+	}
+
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "error",
+			"message": "ข้อมูลไม่ถูกต้อง",
+		})
+	}
+
+	if req.Date == "" || req.ShiftID == "" || req.DepartmentID == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "error",
+			"message": "ต้องระบุ date, shiftId และ departmentId",
+		})
+	}
+
+	// Remove staff from shift
+	if len(req.RemoveNurses) > 0 || len(req.RemoveAssistants) > 0 {
+		removeIDs := append(req.RemoveNurses, req.RemoveAssistants...)
+		for _, staffID := range removeIDs {
+			if err := h.repo.DeleteAssignmentByStaffAndShift(c.Context(), staffID, req.ShiftID, req.Date); err != nil {
+				log.Printf("Error removing staff %s: %v", staffID, err)
+			}
+		}
+	}
+
+	// Add staff to shift
+	var newAssignments []database.Assignment
+
+	// Add nurses
+	for _, nurseID := range req.AddNurses {
+		newAssignments = append(newAssignments, database.Assignment{
+			ID:           uuid.New().String(),
+			DepartmentID: req.DepartmentID,
+			UserID:       nurseID,
+			ShiftID:      req.ShiftID,
+			ScheduleDate: req.Date,
+			Status:       "assigned",
+		})
+	}
+
+	// Add assistants
+	for _, assistantID := range req.AddAssistants {
+		newAssignments = append(newAssignments, database.Assignment{
+			ID:           uuid.New().String(),
+			DepartmentID: req.DepartmentID,
+			UserID:       assistantID,
+			ShiftID:      req.ShiftID,
+			ScheduleDate: req.Date,
+			Status:       "assigned",
+		})
+	}
+
+	// Bulk insert new assignments
+	if len(newAssignments) > 0 {
+		if err := h.repo.BulkInsertAssignments(c.Context(), newAssignments); err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"status":  "error",
+				"message": "ไม่สามารถเพิ่มพนักงานเข้าเวรได้: " + err.Error(),
+			})
+		}
+	}
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"status":  "success",
+		"message": "แก้ไขเวรสำเร็จ",
+		"data": fiber.Map{
+			"added":     len(newAssignments),
+			"removed":   len(req.RemoveNurses) + len(req.RemoveAssistants),
+		},
+	})
+}
