@@ -5,10 +5,12 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"nurseshift/employee-leave-service/internal/domain/usecases"
+	"nurseshift/employee-leave-service/internal/infrastructure/config"
 	"nurseshift/employee-leave-service/internal/infrastructure/database"
 	"nurseshift/employee-leave-service/internal/infrastructure/repositories"
 	"nurseshift/employee-leave-service/internal/interfaces/http/handlers"
@@ -22,8 +24,11 @@ import (
 )
 
 func main() {
-	// Load environment variables from config.env
-	log.Println("Loading environment variables...")
+	// Load configuration
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("Failed to load config: %v", err)
+	}
 
 	// Database connection
 	dbConn, err := database.NewConnection()
@@ -59,7 +64,7 @@ func main() {
 	app.Use(recover.New())
 	app.Use(helmet.New())
 	app.Use(cors.New(cors.Config{
-		AllowOrigins:     "http://localhost:3000,http://localhost:3002",
+		AllowOrigins:     strings.Join(cfg.CORS.Origins, ","),
 		AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS",
 		AllowHeaders:     "Origin,Content-Type,Accept,Authorization",
 		AllowCredentials: true,
