@@ -66,7 +66,7 @@ func Load() (*Config, error) {
 			ExpireHours: getEnvAsInt("JWT_EXPIRE_HOURS", 24),
 		},
 		CORS: CORSConfig{
-			Origins:     strings.Split(getEnv("CORS_ORIGINS", "http://localhost:3000,http://localhost:3002"), ","),
+			Origins:     strings.Split(getEnv("CORS_ORIGINS", "http://localhost:3000,http://localhost:3002,https://frontend-production-1f79.up.railway.app"), ","),
 			Credentials: getEnvAsBool("CORS_CREDENTIALS", true),
 		},
 	}
