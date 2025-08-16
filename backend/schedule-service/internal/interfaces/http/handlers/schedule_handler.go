@@ -1228,7 +1228,7 @@ func (h *ScheduleHandler) EditShift(c *fiber.Ctx) error {
 		})
 	}
 
-	// Simple approach: replace all staff for this shift
+	// Replace all staff for this shift (like CreateSchedule)
 	// First, remove all existing assignments for this shift
 	existingAssignments, err := h.repo.ListAssignmentsWithShiftForDate(c.Context(), req.DepartmentID, req.Date)
 	if err != nil {
@@ -1247,36 +1247,37 @@ func (h *ScheduleHandler) EditShift(c *fiber.Ctx) error {
 		}
 	}
 
-	// Create new assignments
-	var newAssignments []database.Assignment
+	// Create new assignments using ScheduleRecord (same as CreateSchedule)
+	var newSchedules []database.ScheduleRecord
 
-	// Add nurses
+	// Add nurses (using UserID like CreateSchedule)
 	for _, nurseID := range req.Nurses {
-		newAssignments = append(newAssignments, database.Assignment{
+		newSchedules = append(newSchedules, database.ScheduleRecord{
 			ID:           uuid.New().String(),
 			DepartmentID: req.DepartmentID,
-			UserID:       nurseID,
+			UserID:       nurseID, // ใช้ UserID เหมือน CreateSchedule
 			ShiftID:      req.ShiftID,
 			ScheduleDate: req.Date,
 			Status:       "assigned",
 		})
 	}
 
-	// Add assistants
+	// Add assistants (using UserID like CreateSchedule)
 	for _, assistantID := range req.Assistants {
-		newAssignments = append(newAssignments, database.Assignment{
+		newSchedules = append(newSchedules, database.ScheduleRecord{
 			ID:           uuid.New().String(),
 			DepartmentID: req.DepartmentID,
-			UserID:       assistantID,
+			UserID:       assistantID, // ใช้ UserID เหมือน CreateSchedule
 			ShiftID:      req.ShiftID,
 			ScheduleDate: req.Date,
 			Status:       "assigned",
 		})
 	}
 
-	// Bulk insert new assignments
-	if len(newAssignments) > 0 {
-		if err := h.repo.BulkInsertAssignments(c.Context(), newAssignments); err != nil {
+	// Insert using Create method (same as CreateSchedule)
+	for _, schedule := range newSchedules {
+		if err := h.repo.Create(c.Context(), &schedule); err != nil {
+			log.Printf("Error creating schedule: %v", err)
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 				"status":  "error",
 				"message": "ไม่สามารถเพิ่มพนักงานเข้าเวรได้: " + err.Error(),
@@ -1288,7 +1289,7 @@ func (h *ScheduleHandler) EditShift(c *fiber.Ctx) error {
 		"status":  "success",
 		"message": "แก้ไขเวรสำเร็จ",
 		"data": fiber.Map{
-			"added":   len(newAssignments),
+			"added":   len(newSchedules),
 			"removed": 0, // Will calculate based on current vs new staff
 		},
 	})
