@@ -39,7 +39,7 @@ import html2canvas from 'html2canvas'
 
 // Types
 interface Employee {
-  id: number
+  id: string
   name: string
   position: string
   department: string
@@ -141,6 +141,7 @@ export default function SchedulePage() {
     assistantsToReduce: 0
   })
   const [employees, setEmployees] = useState<Employee[]>([])
+  const [availableFromApi, setAvailableFromApi] = useState<Employee[]>([])
 
   // Stats (จริงจาก API)
   const [stats, setStats] = useState({
@@ -1272,6 +1273,14 @@ export default function SchedulePage() {
       requiredAssistants: shift.requiredAssistants || 0
     })
     setShowEditShiftModal(true)
+    ;(async () => {
+      try {
+        const list = await scheduleService.getAvailableStaff({ departmentId: selectedDepartment, date, shiftId })
+        setAvailableFromApi(list.map(i => ({ id: i.id, name: i.name, position: i.position, department: '', shiftCounts: {} as any })))
+      } catch {
+        setAvailableFromApi([])
+      }
+    })()
   }
 
   const handleReduceStaff = async () => {
@@ -1900,9 +1909,9 @@ export default function SchedulePage() {
                       <h4 className="text-lg font-medium text-indigo-900">พยาบาลที่สามารถขึ้นเวรได้</h4>
                     </div>
                     <div className="space-y-2">
-                      {employees
+                      {(availableFromApi.length ? availableFromApi : employees)
                         .filter(emp => emp.position === 'nurse' && 
-                          !editingShift.nurses.some(n => n.id === emp.id))
+                          !editingShift.nurses.some(n => String(n.id) === String(emp.id)))
                         .map((nurse, idx) => (
                           <div key={idx} className="flex items-center justify-between bg-white p-3 rounded-lg shadow-sm border border-indigo-100">
                             <div className="flex items-center space-x-3">
@@ -1929,9 +1938,9 @@ export default function SchedulePage() {
                       <h4 className="text-lg font-medium text-purple-900">ผู้ช่วยพยาบาลที่สามารถขึ้นเวรได้</h4>
                     </div>
                     <div className="space-y-2">
-                      {employees
+                      {(availableFromApi.length ? availableFromApi : employees)
                         .filter(emp => emp.position === 'assistant' && 
-                          !editingShift.assistants.some(a => a.id === emp.id))
+                          !editingShift.assistants.some(a => String(a.id) === String(emp.id)))
                         .map((assistant, idx) => (
                           <div key={idx} className="flex items-center justify-between bg-white p-3 rounded-lg shadow-sm border border-purple-100">
                             <div className="flex items-center space-x-3">

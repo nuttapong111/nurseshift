@@ -56,6 +56,14 @@ class ScheduleService {
     return body.data || []
   }
 
+  async getAvailableStaff(params: { departmentId: string; date: string; shiftId: string }): Promise<Array<{ id: string; name: string; position: 'nurse'|'assistant' }>> {
+    const qs = new URLSearchParams(params as any)
+    const res = await fetch(`${API_BASE_URL}/api/v1/schedules/available-staff?${qs.toString()}`, { headers: await this.headers() })
+    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`)
+    const body = await res.json()
+    return body.data || []
+  }
+
   async create(data: { departmentId: string; date: string }): Promise<ScheduleItem> {
     const res = await fetch(`${API_BASE_URL}/api/v1/schedules/`, {
       method: 'POST',

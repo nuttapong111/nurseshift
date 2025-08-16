@@ -25,6 +25,97 @@ func NewScheduleHandler(repo *database.ScheduleRepository) *ScheduleHandler {
 	return &ScheduleHandler{repo: repo}
 }
 
+// GetAvailableStaff returns staff who are not assigned to the given date/shift and have no time overlap
+func (h *ScheduleHandler) GetAvailableStaff(c *fiber.Ctx) error {
+	_ = c.Locals("userID").(string)
+	departmentID := c.Query("departmentId")
+	date := c.Query("date")
+	shiftID := c.Query("shiftId")
+	if departmentID == "" || date == "" || shiftID == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"status": "error", "message": "ต้องระบุ departmentId, date และ shiftId"})
+	}
+
+	// load shift to get interval
+	shifts, err := h.repo.ListShifts(c.Context(), departmentID)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"status": "error", "message": err.Error()})
+	}
+	var target database.ShiftRecord
+	found := false
+	for _, s := range shifts {
+		if s.ID == shiftID {
+			target = s
+			found = true
+			break
+		}
+	}
+	if !found {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"status": "error", "message": "ไม่พบเวรที่ระบุ"})
+	}
+
+	parseHM := func(hm string) (int, bool) {
+		var hh, mm int
+		if _, e := fmt.Sscanf(hm, "%d:%d", &hh, &mm); e != nil {
+			return 0, false
+		}
+		return hh*60 + mm, true
+	}
+	startT, ok1 := parseHM(target.StartTime)
+	endT, ok2 := parseHM(target.EndTime)
+	if !ok1 || !ok2 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"status": "error", "message": "เวลาเวรไม่ถูกต้อง"})
+	}
+	if endT <= startT {
+		endT += 24 * 60
+	}
+	overlaps := func(aS, aE, bS, bE int) bool { return aS < bE && bS < aE }
+
+	// existing intervals on that date
+	assigned, err := h.repo.ListAssignmentsWithShiftForDate(c.Context(), departmentID, date)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"status": "error", "message": err.Error()})
+	}
+	assignedSet := map[string]bool{}
+	staffIntervals := map[string][][2]int{}
+	for _, a := range assigned {
+		assignedSet[a.StaffID] = true
+		s, _ := parseHM(a.StartTime)
+		e, _ := parseHM(a.EndTime)
+		if e <= s {
+			e += 24 * 60
+		}
+		staffIntervals[a.StaffID] = append(staffIntervals[a.StaffID], [2]int{s, e})
+	}
+
+	// list department staff
+	staffList, err := h.repo.ListDepartmentStaff(c.Context(), departmentID)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"status": "error", "message": err.Error()})
+	}
+
+	out := []fiber.Map{}
+	for _, s := range staffList {
+		if assignedSet[s.ID] {
+			continue
+		}
+		can := true
+		for _, iv := range staffIntervals[s.ID] {
+			if overlaps(iv[0], iv[1], startT, endT) {
+				can = false
+				break
+			}
+		}
+		if can {
+			role := "nurse"
+			if strings.Contains(strings.ToLower(s.Position), "assist") || strings.Contains(s.Position, "ผู้ช่วย") {
+				role = "assistant"
+			}
+			out = append(out, fiber.Map{"id": s.ID, "name": s.Name, "position": role})
+		}
+	}
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{"status": "success", "message": "ดึงรายชื่อที่พร้อมขึ้นเวร", "data": out})
+}
+
 // GetSchedules returns schedules for authenticated user's departments
 func (h *ScheduleHandler) GetSchedules(c *fiber.Ctx) error {
 	_ = c.Locals("userID").(string)

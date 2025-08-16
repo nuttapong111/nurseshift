@@ -71,6 +71,7 @@ func main() {
 		schedules.Post("/", scheduleHandler.CreateSchedule)
 		schedules.Get("/stats", scheduleHandler.GetScheduleStats)
 		schedules.Get("/shifts", scheduleHandler.ListShifts)
+		schedules.Get("/available-staff", scheduleHandler.GetAvailableStaff)
 		schedules.Post("/optimize-generate", scheduleHandler.OptimizeGenerate)
 		schedules.Get("/:id", scheduleHandler.GetSchedule)
 		schedules.Put("/:id", scheduleHandler.UpdateSchedule)

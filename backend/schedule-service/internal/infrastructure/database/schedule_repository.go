@@ -526,3 +526,37 @@ func (r *ScheduleRepository) ListDepartmentStaff(ctx context.Context, department
 	}
 	return out, rows.Err()
 }
+
+// AssignmentInterval represents an assignment on a date with concrete time window
+type AssignmentInterval struct {
+	StaffID   string
+	ShiftID   string
+	StartTime string
+	EndTime   string
+}
+
+// ListAssignmentsWithShiftForDate joins schedules with shifts to get time intervals for a specific date
+func (r *ScheduleRepository) ListAssignmentsWithShiftForDate(ctx context.Context, departmentID, date string) ([]AssignmentInterval, error) {
+	q := fmt.Sprintf(`
+		SELECT s.staff_id, s.shift_id, to_char(sh.start_time,'HH24:MI'), to_char(sh.end_time,'HH24:MI')
+		FROM %s s
+		JOIN %s.shifts sh ON sh.id = s.shift_id
+		WHERE s.department_id = $1
+		  AND to_char(s.schedule_date,'YYYY-MM-DD') = $2
+		  AND s.staff_id IS NOT NULL
+	`, r.table(), r.schema)
+	rows, err := r.conn.DB.QueryContext(ctx, q, departmentID, date)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []AssignmentInterval
+	for rows.Next() {
+		var rec AssignmentInterval
+		if err := rows.Scan(&rec.StaffID, &rec.ShiftID, &rec.StartTime, &rec.EndTime); err != nil {
+			return nil, err
+		}
+		out = append(out, rec)
+	}
+	return out, rows.Err()
+}
