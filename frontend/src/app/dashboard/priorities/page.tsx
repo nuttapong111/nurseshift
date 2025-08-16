@@ -112,7 +112,7 @@ export default function PrioritiesPage() {
           : priority
       ))
       // persist to API
-      await fetch(`${process.env.NEXT_PUBLIC_PRIORITY_API_URL || 'http://localhost:8086'}/api/v1/priorities/${_priorityId}/setting`, {
+      await fetch(`${process.env.NEXT_PUBLIC_PRIORITY_SERVICE_URL || process.env.NEXT_PUBLIC_PRIORITY_API_URL || 'http://localhost:8086'}/api/v1/priorities/${_priorityId}/setting`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
         body: JSON.stringify({ settingValue: Number(_newValue) })
@@ -266,7 +266,7 @@ export default function PrioritiesPage() {
                              })
                              if (num !== undefined) {
                                try {
-                                 await fetch(`${process.env.NEXT_PUBLIC_PRIORITY_API_URL || 'http://localhost:8086'}/api/v1/priorities/${priority.id}/setting`, {
+                                 await fetch(`${process.env.NEXT_PUBLIC_PRIORITY_SERVICE_URL || process.env.NEXT_PUBLIC_PRIORITY_API_URL || 'http://localhost:8086'}/api/v1/priorities/${priority.id}/setting`, {
                                    method: 'PUT',
                                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
                                    body: JSON.stringify({ settingValue: Number(num) })

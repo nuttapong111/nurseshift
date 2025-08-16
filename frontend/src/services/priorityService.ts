@@ -11,7 +11,7 @@ export interface PriorityItem {
   settingValue?: number
 }
 
-const BASE_URL = process.env.NEXT_PUBLIC_PRIORITY_API_URL || 'http://localhost:8086'
+const BASE_URL = process.env.NEXT_PUBLIC_PRIORITY_SERVICE_URL || process.env.NEXT_PUBLIC_PRIORITY_API_URL || 'http://localhost:8086'
 
 async function headers(): Promise<HeadersInit> {
   if (typeof window === 'undefined') return { 'Content-Type': 'application/json' }

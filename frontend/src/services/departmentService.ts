@@ -1,6 +1,6 @@
 import { getAuthToken } from './userService'
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_DEPARTMENT_API_URL || 'http://localhost:8083'
+const API_BASE_URL = process.env.NEXT_PUBLIC_DEPARTMENT_SERVICE_URL || process.env.NEXT_PUBLIC_DEPARTMENT_API_URL || 'http://localhost:8083'
 
 export interface Department {
   id: string

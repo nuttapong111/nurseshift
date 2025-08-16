@@ -92,7 +92,7 @@ export default function Header({ user }: HeaderProps) {
         // Call logout API
         const token = localStorage.getItem('token')
         if (token) {
-          await fetch('http://localhost:8081/api/v1/auth/logout', {
+          await fetch(`${process.env.NEXT_PUBLIC_AUTH_SERVICE_URL}/api/v1/auth/logout`, {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${token}`,
