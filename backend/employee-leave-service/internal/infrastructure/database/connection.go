@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	_ "github.com/lib/pq"
@@ -26,6 +27,7 @@ func NewConnection() (*Connection, error) {
 	dbName := os.Getenv("DB_NAME")
 	dbSSLMode := os.Getenv("DB_SSLMODE")
 	dbSchema := os.Getenv("DB_SCHEMA")
+	databaseURL := os.Getenv("DATABASE_URL")
 
 	if dbHost == "" {
 		dbHost = "localhost"
@@ -45,11 +47,18 @@ func NewConnection() (*Connection, error) {
 
 	log.Printf("Connecting to database: %s:%s/%s (schema: %s)", dbHost, dbPort, dbName, dbSchema)
 
-	// Build URL DSN to ensure database selection is respected
-	userEscaped := url.QueryEscape(dbUser)
-	passEscaped := url.QueryEscape(dbPassword)
-	hostPort := fmt.Sprintf("%s:%s", dbHost, dbPort)
-	dsn := fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=%s", userEscaped, passEscaped, hostPort, dbName, dbSSLMode)
+	// Prefer DATABASE_URL if provided (Railway often provides this)
+	var dsn string
+	if strings.TrimSpace(databaseURL) != "" {
+		dsn = databaseURL
+		log.Printf("Using DATABASE_URL for connection")
+	} else {
+		// Build URL DSN to ensure database selection is respected
+		userEscaped := url.QueryEscape(dbUser)
+		passEscaped := url.QueryEscape(dbPassword)
+		hostPort := fmt.Sprintf("%s:%s", dbHost, dbPort)
+		dsn = fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=%s", userEscaped, passEscaped, hostPort, dbName, dbSSLMode)
+	}
 
 	// Open database connection
 	db, err := sql.Open("postgres", dsn)
@@ -67,11 +76,11 @@ func NewConnection() (*Connection, error) {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
-	// Validate connected database
+	// Validate connected database (warn only; do not fail in production)
 	var curDB string
 	if err := db.QueryRow("select current_database()").Scan(&curDB); err == nil {
-		if curDB != dbName {
-			return nil, fmt.Errorf("connected to unexpected database: got '%s' expected '%s'", curDB, dbName)
+		if dbName != "" && curDB != dbName {
+			log.Printf("Warning: connected to database '%s' while DB_NAME is '%s'", curDB, dbName)
 		}
 	} else {
 		log.Printf("Warning: failed to read current_database(): %v", err)
