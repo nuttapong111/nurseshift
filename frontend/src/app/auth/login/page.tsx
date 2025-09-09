@@ -203,25 +203,6 @@ export default function LoginPage() {
             </div>
           </CardContent>
         </Card>
-
-        {/* Demo Credentials */}
-        <Card className="mt-4 bg-gray-50 border-gray-200">
-          <CardContent className="pt-6">
-            <h3 className="font-medium text-gray-900 mb-3">ข้อมูลทดสอบ:</h3>
-            <div className="space-y-2 text-sm text-gray-600">
-              <div>
-                <strong>ผู้ใช้งานทั่วไป:</strong><br />
-                Email: user@nurseshift.com<br />
-                Password: user123
-              </div>
-              <div>
-                <strong>ผู้ดูแลระบบ:</strong><br />
-                Email: admin@nurseshift.com<br />
-                Password: admin123
-              </div>
-            </div>
-          </CardContent>
-        </Card>
       </div>
     </div>
   )
