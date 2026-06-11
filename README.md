@@ -206,20 +206,5 @@ kubectl apply -f deployment/
 4. Push ไปยัง Branch (`git push origin feature/AmazingFeature`)
 5. เปิด Pull Request
 
-## 📄 License
-
-โปรเจคนี้อยู่ภายใต้ MIT License - ดูรายละเอียดได้ที่ [LICENSE](LICENSE) file
-
-## 📞 ติดต่อ
-
-- **Email**: support@nurseshift.com
-- **Website**: https://nurseshift.com
-- **Documentation**: [docs/](docs/)
-
-## 🙏 ขอบคุณ
-
-ขอบคุณทุกคนที่ช่วยพัฒนาและสนับสนุนโปรเจค NurseShift
-
----
 
 **NurseShift** - ระบบจัดการเวรพยาบาลที่ทันสมัยและใช้งานง่าย 🏥✨
